@@ -1,0 +1,2504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NER Logistics Accessibility Intelligence Platform</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --risk-low: #22c55e;
+    --risk-moderate: #eab308;
+    --risk-high: #f97316;
+    --risk-severe: #dc2626;
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .layout { display: grid; grid-template-columns: 340px 1fr; height: 100vh; }
+  .sidebar { background: var(--panel); padding: 16px; overflow-y: auto; border-right: 1px solid #334155; }
+  .sidebar h1 { font-size: 16px; margin: 0 0 4px; }
+  .sidebar .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  #map { height: 100vh; }
+  .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 20px 0 8px; }
+  .segment-card, .alert-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+  .segment-card:hover, .alert-card:hover { background: #2d3d56; }
+  .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #0f172a; }
+  .risk-low { background: var(--risk-low); }
+  .risk-moderate { background: var(--risk-moderate); }
+  .risk-high { background: var(--risk-high); }
+  .risk-severe { background: var(--risk-severe); }
+  .alert-card { border-left: 3px solid var(--risk-severe); }
+  .alert-card.warning { border-left-color: var(--risk-high); }
+  .shipment-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; border-left: 3px solid #22c55e; }
+  .route-form { display: flex; gap: 6px; margin-bottom: 10px; }
+  .route-form select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 12px; }
+  .text-input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 13px; margin-bottom: 6px; }
+  .autocomplete-wrap { position: relative; }
+  .suggestion-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; background: #1e293b; border: 1px solid #334155; border-radius: 6px; margin-top: -4px; max-height: 220px; overflow-y: auto; }
+  .suggestion-item { padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid #2a3a52; }
+  .suggestion-item:last-child { border-bottom: none; }
+  .suggestion-item:hover, .suggestion-item.active { background: #2d3d56; }
+  .live-dot { position: relative; width: 18px; height: 18px; }
+  .live-dot .dot-pulse { position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; background: #22c55e; border-radius: 50%; opacity: 0.55; animation: liveDotPulse 1.6s infinite ease-out; }
+  .live-dot .dot-core { position: absolute; top: 5px; left: 5px; width: 8px; height: 8px; background: #22c55e; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
+  @keyframes liveDotPulse { 0% { transform: scale(0.6); opacity: 0.6; } 100% { transform: scale(2.4); opacity: 0; } }
+  .text-input::placeholder { color: #64748b; }
+  .btn { width: 100%; padding: 8px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; margin-top: 6px; font-size: 13px; }
+  .btn-primary { background: #3b82f6; color: white; }
+  .btn-ride { background: #22c55e; color: #0f172a; }
+  .btn-sim { background: #a855f7; color: white; }
+  .btn-stop { background: #dc2626; color: white; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .route-result { font-size: 12px; background: #263449; border-radius: 8px; padding: 10px; margin-top: 8px; }
+  .legend { position: absolute; bottom: 20px; left: 360px; background: var(--panel); padding: 10px 14px; border-radius: 8px; font-size: 12px; z-index: 500; }
+  .legend span { display: inline-flex; align-items: center; margin-right: 12px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; display: inline-block; }
+  .status-line { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .error-banner { background: #dc2626; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; display: none; }
+  .ride-panel { background: #1a2b1a; border: 1px solid #22c55e; border-radius: 8px; padding: 10px; margin-top: 8px; display: none; }
+  .ride-panel .big { font-size: 22px; font-weight: 700; }
+
+  /* --- Role picker (stand-in for real login/auth, which is handled
+     elsewhere -- this app assumes a role has already been decided and
+     just needs to know which one) --- */
+  .role-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.96); z-index: 5000; display: flex; align-items: center; justify-content: center; }
+  .role-card { background: var(--panel); border-radius: 14px; padding: 28px; width: 360px; text-align: center; }
+  .role-card h2 { margin: 0 0 4px; font-size: 18px; }
+  .role-card .subtitle { margin-bottom: 20px; }
+  .role-btn { display: block; width: 100%; text-align: left; padding: 14px 16px; margin-bottom: 10px; border-radius: 10px; border: 1px solid #334155; background: #263449; color: var(--text); cursor: pointer; font-size: 14px; }
+  .role-btn:hover { background: #2d3d56; border-color: #3b82f6; }
+  .role-btn .role-name { font-weight: 700; display: block; }
+  .role-btn .role-desc { font-size: 12px; color: var(--muted); }
+
+  .topbar { position: absolute; top: 12px; right: 16px; z-index: 900; background: var(--panel); border-radius: 8px; padding: 8px 12px; font-size: 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .role-pill { background: #3b82f6; color: white; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+  .switch-role-link { color: var(--muted); cursor: pointer; text-decoration: underline; }
+
+  /* --- Authority-only widgets --- */
+  .connectivity-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #0f172a; }
+  .conn-normal { background: #22c55e; }
+  .conn-watch { background: #eab308; }
+  .conn-at_risk { background: #f97316; }
+  .conn-disrupted { background: #dc2626; }
+  .district-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+  .district-card:hover { background: #2d3d56; }
+  .review-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+  .review-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .btn-verify { flex: 1; background: #22c55e; color: #0f172a; border: none; border-radius: 6px; padding: 6px; font-weight: 600; cursor: pointer; font-size: 12px; }
+  .btn-reject { flex: 1; background: #dc2626; color: white; border: none; border-radius: 6px; padding: 6px; font-weight: 600; cursor: pointer; font-size: 12px; }
+  .btn-resolve { background: #3a3a4a; color: var(--text); border: none; border-radius: 6px; padding: 5px 10px; font-weight: 600; cursor: pointer; font-size: 11px; margin-top: 6px; }
+  .trip-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+  .trip-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .trip-in_transit { background: #3b82f6; color: white; }
+  .trip-delayed { background: #f97316; color: #0f172a; }
+  .trip-planned { background: #94a3b8; color: #0f172a; }
+  .trip-completed { background: #22c55e; color: #0f172a; }
+
+  /* --- Chat (Inbox + per-person chat panel) --- */
+  .chat-btn { margin-top:6px; padding:4px 10px; border:none; border-radius:6px; background:#22c55e; color:#0f172a; font-size:12px; cursor:pointer; font-weight:600; }
+  .inbox-unread-badge { background:#dc2626; color:white; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:700; }
+  #chatModal { display:none; position:fixed; top:0; right:0; height:100vh; width:320px; z-index:3500; background:var(--panel); border-left:2px solid #22c55e; box-shadow:-4px 0 20px rgba(0,0,0,0.6); flex-direction:column; }
+  #chatModal .chat-header { padding:12px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; }
+  #chatModal .chat-close { background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; line-height:1; }
+  #chatThread { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .chat-bubble { padding:6px 10px; border-radius:12px; max-width:80%; font-size:13px; word-wrap:break-word; }
+  .chat-bubble.mine { align-self:flex-end; background:#22c55e; color:#0f172a; }
+  .chat-bubble.theirs { align-self:flex-start; background:#334155; color:var(--text); }
+  .chat-bubble .chat-time { display:block; font-size:10px; opacity:0.7; margin-top:2px; }
+  #chatQuickReplies { padding:8px 10px 0; display:flex; flex-wrap:wrap; gap:6px; }
+  .quick-reply-chip { background:#263449; border:1px solid #334155; color:var(--text); border-radius:999px; padding:4px 10px; font-size:11px; cursor:pointer; }
+  .quick-reply-chip:hover { background:#2d3d56; }
+  .chat-input-row { padding:10px; border-top:1px solid #334155; display:flex; gap:6px; }
+  .chat-input-row input { flex:1; margin-bottom:0; }
+  .chat-input-row button { width:auto; margin-top:0; padding:8px 14px; white-space:nowrap; }
+  .inbox-card { background:#263449; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:13px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .inbox-card:hover { background:#2d3d56; }
+  .inbox-card .inbox-preview { color:var(--muted); font-size:12px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:190px; }
+</style>
+</head>
+<body>
+
+<div id="roleOverlay" class="role-overlay">
+  <div class="role-card">
+    <h2>🛣️ NER Logistics Intelligence</h2>
+    <div class="subtitle">Who's signing in?</div>
+    <button class="role-btn" onclick="applyRole('driver')">
+      <span class="role-name">🚚 Driver</span>
+      <span class="role-desc">Route planning, live risk, SOS, report issues</span>
+    </button>
+    <button class="role-btn" onclick="applyRole('field_reporter')">
+      <span class="role-name">📍 Field Reporter</span>
+      <span class="role-desc">Submit &amp; manage ground reports</span>
+    </button>
+    <button class="role-btn" onclick="applyRole('authority')">
+      <span class="role-name">🏛️ Authority / Government</span>
+      <span class="role-desc">District oversight, verification, alerts</span>
+    </button>
+    <div class="status-line" style="margin-top:8px;">(Stand-in for real login -- our auth system will set this.)</div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <h1>🛣️ NER Logistics Intelligence</h1>
+    <div class="subtitle" id="roleSubtitle">Real-time accessibility &amp; disruption monitoring</div>
+
+    <div id="errorBanner" class="error-banner"></div>
+
+    <div data-roles="driver">
+      <div class="section-title">Search a Route (any location)</div>
+      <div class="autocomplete-wrap">
+        <input id="fromText" type="text" placeholder="From (e.g. Dimapur, Nagaland)" class="text-input" autocomplete="off" />
+        <div id="fromSuggestions" class="suggestion-dropdown"></div>
+      </div>
+      <div class="autocomplete-wrap">
+        <input id="toText" type="text" placeholder="To (e.g. Kohima, Nagaland)" class="text-input" autocomplete="off" />
+        <div id="toSuggestions" class="suggestion-dropdown"></div>
+      </div>
+      <button class="btn btn-primary" onclick="findCustomRoute()">Find Route</button>
+      <div id="customRouteResults"></div>
+      <div id="routeShipmentMatches"></div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">Report a Road Issue</div>
+      <button class="btn btn-primary" id="reportIssueBtn" onclick="startFieldReport()">📍 Report an Issue</button>
+      <div id="fieldReportForm" style="display:none; margin-top:8px;">
+        <select id="reportType" class="text-input">
+          <option value="landslide">Landslide</option>
+          <option value="flood">Flood</option>
+          <option value="road_damage">Road damage</option>
+          <option value="bridge_damage">Bridge damage</option>
+          <option value="congestion">Congestion / traffic</option>
+          <option value="clear">Now clear (previously reported issue resolved)</option>
+        </select>
+        <textarea id="reportDescription" class="text-input" placeholder="Describe what you're seeing..." rows="3" style="resize:vertical;"></textarea>
+        <input id="reporterName" type="text" class="text-input" placeholder="Your name (optional)" />
+        <div class="status-line" id="reportLocationStatus">Locating you...</div>
+        <button class="btn btn-primary" onclick="submitFieldReport()">Submit Report</button>
+        <button class="btn" onclick="cancelFieldReport()" style="background:#3a3a4a; margin-top:6px;">Cancel</button>
+      </div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">Recent Field Reports (<span id="fieldReportCount">0</span>)</div>
+      <div id="fieldReportsList"><div class="status-line">Loading...</div></div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">Nearby Help (Live Location)</div>
+      <input id="driverName" type="text" placeholder="Your name *" class="text-input" />
+      <input id="driverPhone" type="text" placeholder="Phone number *" class="text-input" />
+      <select id="driverRole" class="text-input">
+        <option value="driver">Driver / Transporter</option>
+        <option value="field_official">Field Official</option>
+      </select>
+      <button class="btn btn-primary" id="shareLocationBtn" onclick="toggleLocationSharing()">Start Sharing My Location</button>
+      <div class="status-line" id="shareStatus">Not sharing.</div>
+      <button class="btn" id="stuckBtn" onclick="findNearbyHelp()" style="background:#dc2626; margin-top:6px;" disabled>🆘 I'm Stuck — Find Nearby Help</button>
+      <div class="status-line" id="stuckHint">Start a ride to enable SOS.</div>
+      <div id="nearbyHelpResults"></div>
+    </div>
+
+    <div data-roles="driver,field_reporter,authority">
+      <div class="section-title">💬 Messages <span id="inboxUnreadBadge"></span></div>
+      <input id="chatDisplayName" type="text" placeholder="Your name (shown to others in chat)" class="text-input" oninput="saveChatDisplayName()" />
+      <div id="inboxList"><div class="status-line">No conversations yet.</div></div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">Shipment Board (Merge Cargo, Save Cost)</div>
+      <button class="btn btn-primary" id="postShipmentBtn" onclick="toggleShipmentForm()">📦 Post an Upcoming Trip</button>
+      <div id="shipmentForm" style="display:none; margin-top:8px;">
+        <div class="autocomplete-wrap">
+        <input id="shipOrigin" type="text" placeholder="From (e.g. Dimapur, Nagaland)" class="text-input" autocomplete="off" />
+          <div id="shipOriginSuggestions" class="suggestion-dropdown"></div>
+        </div>
+        <div class="autocomplete-wrap">
+        <input id="shipDest" type="text" placeholder="To (e.g. Kohima, Nagaland)" class="text-input" autocomplete="off" />
+          <div id="shipDestSuggestions" class="suggestion-dropdown"></div>
+        </div>
+        <input id="shipDate" type="date" class="text-input" />
+        <input id="shipTime" type="time" class="text-input" placeholder="Departure time (optional)" />
+        <select id="shipCargoType" class="text-input">
+          <option value="general">General</option>
+          <option value="medicine">Medicine</option>
+          <option value="food">Food</option>
+          <option value="construction">Construction</option>
+          <option value="agriculture">Agriculture</option>
+        </select>
+        <input id="shipCapacity" type="number" min="0" placeholder="Spare capacity (kg, optional)" class="text-input" />
+        <input id="shipVehicleReg" type="text" placeholder="Vehicle reg. no. (optional)" class="text-input" />
+        <textarea id="shipNotes" class="text-input" placeholder="Space available -- e.g. '2 crates worth, back of pickup'" rows="2" style="resize:vertical;"></textarea>
+        <button class="btn" style="background:#7c3aed;" onclick="findShipmentMatches()">🔍 Find Matches for This Trip</button>
+        <button class="btn btn-primary" onclick="submitShipmentPost()">Post to Board</button>
+        <button class="btn" style="background:#3a3a4a;" onclick="toggleShipmentForm()">Cancel</button>
+      </div>
+      <div id="shipmentMatchResults"></div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">🛏️ Nearby Accommodations</div>
+      <button class="btn" onclick="findAccommodationsNearMe()" style="background:#3a3a4a;">Find places to rest nearby</button>
+      <div id="accommodationsResults"></div>
+    </div>
+
+    <div id="stuckNotifyModal" style="display:none; position:fixed; top:20px; right:20px; z-index:2000; background:#1e293b; border:2px solid #dc2626; border-radius:10px; padding:14px; max-width:300px; box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+      <div style="font-weight:bold; color:#dc2626; margin-bottom:6px;">🆘 Someone nearby needs help</div>
+      <div id="stuckNotifyContent"></div>
+      <div style="margin-top:8px; display:flex; gap:6px;">
+        <button class="btn btn-primary" style="margin:0;" onclick="viewStuckOnMap()">View on Map</button>
+        <button class="btn chat-btn" style="margin:0;" onclick="chatWithCurrentNotifyDriver()">💬 Chat</button>
+        <button class="btn" style="margin:0; background:#3a3a4a;" onclick="dismissStuckNotify()">Dismiss</button>
+      </div>
+    </div>
+
+    <div id="directNotifyModal" style="display:none; position:fixed; top:110px; right:20px; z-index:2050; background:#1e293b; border:2px solid #3b82f6; border-radius:10px; padding:14px; max-width:300px; box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+      <div style="font-weight:bold; color:#3b82f6; margin-bottom:6px;">🔔 New notification</div>
+      <div id="directNotifyContent"></div>
+      <div style="margin-top:8px; display:flex; gap:6px;">
+        <button class="btn btn-primary" style="margin:0;" id="directNotifyMapBtn" onclick="viewDirectNotifyOnMap()">View on Map</button>
+        <button class="btn chat-btn" style="margin:0;" onclick="chatWithCurrentDirectNotify()">💬 Chat</button>
+        <button class="btn" style="margin:0; background:#3a3a4a;" onclick="dismissDirectNotify()">Dismiss</button>
+      </div>
+    </div>
+
+    <div id="chatMessageNotifyModal" style="display:none; position:fixed; top:200px; right:20px; z-index:2075; background:#1e293b; border:2px solid #22c55e; border-radius:10px; padding:14px; max-width:300px; box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+      <div style="font-weight:bold; color:#22c55e; margin-bottom:6px;">💬 New message</div>
+      <div id="chatMessageNotifyContent"></div>
+      <div style="margin-top:8px; display:flex; gap:6px;">
+        <button class="btn btn-primary" style="margin:0;" onclick="openChatFromNotify()">Reply</button>
+        <button class="btn" style="margin:0; background:#3a3a4a;" onclick="dismissChatMessageNotify()">Dismiss</button>
+      </div>
+    </div>
+
+    <div id="chatModal">
+      <div class="chat-header">
+        <div>
+          <div style="font-weight:bold;" id="chatPartnerName">--</div>
+          <div class="status-line" id="chatPartnerRole">--</div>
+        </div>
+        <button class="chat-close" onclick="closeChat()">✕</button>
+      </div>
+      <div id="chatThread"></div>
+      <div id="chatQuickReplies"></div>
+      <div class="chat-input-row">
+        <input id="chatInput" type="text" class="text-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendChatFromInput();" />
+        <button class="btn btn-primary" onclick="sendChatFromInput()">Send</button>
+      </div>
+    </div>
+
+    <div data-roles="driver">
+      <button class="btn btn-ride" id="startRideBtn" onclick="startRealRide()" disabled>📍 Start Ride (Live GPS)</button>
+      <button class="btn btn-sim" id="simRideBtn" onclick="startSimulatedRide()" disabled>▶ Simulate Ride (Demo)</button>
+      <button class="btn btn-stop" id="stopRideBtn" onclick="stopRide()" style="display:none;">⏹ Stop</button>
+
+      <div id="ridePanel" class="ride-panel">
+        <div class="big" id="rideEta">--</div>
+        <div class="status-line">min remaining · <span id="rideDistance">--</span> km left</div>
+        <div class="status-line" id="rideMode">—</div>
+      </div>
+    </div>
+
+    <div data-roles="driver,field_reporter">
+      <div class="section-title">Active Alerts (<span id="alertCount">0</span>)</div>
+      <div id="alertsList"><div class="status-line">Loading...</div></div>
+    </div>
+
+    <div data-roles="authority">
+      <div class="section-title">District Connectivity (<span id="districtCount">0</span>)</div>
+      <div id="districtList"><div class="status-line">Loading...</div></div>
+    </div>
+
+    <div data-roles="authority">
+      <div class="section-title">Field Report Review Queue</div>
+      <div id="reviewQueueList"><div class="status-line">Loading...</div></div>
+    </div>
+
+    <div data-roles="authority">
+      <div class="section-title">Alert Management (<span id="authAlertCount">0</span> active)</div>
+      <div id="authAlertsList"><div class="status-line">Loading...</div></div>
+      <button class="btn" onclick="toggleCreateAlertForm()" style="background:#3a3a4a;">+ Create Manual Alert</button>
+      <div id="createAlertForm" style="display:none; margin-top:8px;">
+        <select id="alertSegmentSelect" class="text-input"><option value="">Select a road segment...</option></select>
+        <select id="alertTypeSelect" class="text-input">
+          <option value="blocked_road">Blocked road</option>
+          <option value="high_risk">High risk</option>
+          <option value="delivery_delay">Delivery delay</option>
+          <option value="emergency">Emergency</option>
+        </select>
+        <select id="alertSeveritySelect" class="text-input">
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="critical">Critical</option>
+        </select>
+        <textarea id="alertMessage" class="text-input" placeholder="Alert message..." rows="2" style="resize:vertical;"></textarea>
+        <button class="btn btn-primary" onclick="submitManualAlert()">Publish Alert</button>
+      </div>
+    </div>
+
+    <div data-roles="authority">
+      <div class="section-title">Trip / Vehicle Oversight (<span id="tripCount">0</span>)</div>
+      <div id="tripsList"><div class="status-line">Loading...</div></div>
+    </div>
+  </div>
+
+  <div style="position: relative;">
+    <div class="topbar">
+      <span class="role-pill" id="roleBadge">--</span>
+      <span class="switch-role-link" onclick="showRoleOverlay()">Switch role</span>
+    </div>
+    <div id="map"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:#3b82f6"></span>No data</span>
+      <span style="display:inline-flex; align-items:center;">
+        <span style="width:120px; height:10px; border-radius:5px; margin-right:6px; display:inline-block;
+          background:linear-gradient(90deg, #22c55e 0%, #eab308 35%, #f97316 65%, #dc2626 100%);"></span>
+        Low risk &rarr; Severe
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = "http://localhost:8000";
+const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
+
+const riskColors = { low: "#22c55e", moderate: "#eab308", high: "#f97316", severe: "#dc2626" };
+
+// Continuous risk gradient for map lines, like a live-traffic layer:
+// no data -> blue, then green -> yellow -> orange -> red as risk_score climbs.
+// Stops are (score, [r,g,b]); colors are linearly interpolated between them.
+const RISK_GRADIENT_STOPS = [
+  [0,   [59, 130, 246]],  // blue   -- unmonitored / no risk data yet
+  [1,   [34, 197, 94]],   // green  -- low
+  [35,  [234, 179, 8]],   // yellow -- moderate
+  [65,  [249, 115, 22]],  // orange -- high
+  [100, [220, 38, 38]],   // red    -- severe
+];
+function getRiskColor(score, hasData = true) {
+  if (!hasData || score === null || score === undefined) return "#3b82f6"; // blue = no data
+  const s = Math.max(0, Math.min(100, score));
+  for (let i = 0; i < RISK_GRADIENT_STOPS.length - 1; i++) {
+    const [s0, c0] = RISK_GRADIENT_STOPS[i];
+    const [s1, c1] = RISK_GRADIENT_STOPS[i + 1];
+    if (s >= s0 && s <= s1) {
+      const t = s1 === s0 ? 0 : (s - s0) / (s1 - s0);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return "#dc2626";
+}
+
+const map = L.map('map').setView([25.75, 93.95], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 18
+}).addTo(map);
+
+let segmentsData = null;
+let currentRouteCoords = null;
+let currentRouteLine = null;
+let rideMarker = null;
+let rideWatchId = null;
+let simInterval = null;
+let realGpsMarker = null;   // green pulsing dot -- always your ACTUAL device GPS
+let realGpsWatchId = null;  // geolocation.watchPosition handle backing realGpsMarker
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function loadSegments() {
+  try {
+    const res = await fetch(`${API_BASE}/segments`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    segmentsData = await res.json();
+    // Not rendered on load -- with thousands of segments across the
+    // monitored region, drawing every one of them (as a map layer AND
+    // a sidebar card) made the page unusably laggy and cluttered.
+    // segmentsData stays in memory purely so findNearbyMonitoredSegments()
+    // can score risk for whatever route the user actually searches for.
+    document.getElementById('errorBanner').style.display = 'none';
+  } catch (err) {
+    showError(`Could not reach the API at ${API_BASE}. Is it running? (${err.message})`);
+  }
+}
+
+let highlightedSegmentLayer = null;
+
+function showSegmentOnMap(segmentId) {
+  if (!segmentsData) return;
+  const feature = segmentsData.features.find(f => f.properties.id === segmentId);
+  if (!feature) return;
+
+  if (highlightedSegmentLayer) map.removeLayer(highlightedSegmentLayer);
+  const color = getRiskColor(feature.properties.risk_score, feature.properties.risk_score !== null);
+  highlightedSegmentLayer = L.geoJSON(feature, { style: { color, weight: 6, opacity: 0.9 } }).addTo(map);
+  highlightedSegmentLayer.bindPopup(`
+    <b>${feature.properties.name}</b><br/>
+    Risk: <b style="color:${color}">${feature.properties.risk_level ? feature.properties.risk_level.toUpperCase() : 'NOT YET SCORED'}</b>${feature.properties.risk_score !== null ? ` (score ${feature.properties.risk_score})` : ''}<br/>
+    ${reasonsHtml(explainRisk(feature.properties))}
+    Status: ${feature.properties.status}
+  `).openPopup();
+  map.fitBounds(highlightedSegmentLayer.getBounds(), { padding: [50, 50] });
+}
+
+// Turns the raw contributing factors behind a risk score into
+// human-readable reasons, e.g. "Heavy rainfall in the last 24h (52mm)".
+// Same thresholds conceptually mirror risk_model.py's weighting, just
+// expressed as readable text instead of a formula.
+function explainRisk(p) {
+  const reasons = [];
+  if (p.rainfall_24h_mm !== null && p.rainfall_24h_mm !== undefined && p.rainfall_24h_mm >= 10) {
+    const level = p.rainfall_24h_mm >= 50 ? 'Heavy' : p.rainfall_24h_mm >= 25 ? 'Significant' : 'Moderate';
+    reasons.push(`${level} rainfall in the last 24h (${p.rainfall_24h_mm}mm)`);
+  }
+  if (p.rainfall_72h_mm !== null && p.rainfall_72h_mm !== undefined && p.rainfall_72h_mm >= 30) {
+    reasons.push(`Saturated ground from recent rain (${p.rainfall_72h_mm}mm over 72h)`);
+  }
+  if (p.avg_slope_deg !== null && p.avg_slope_deg !== undefined && p.avg_slope_deg >= 15) {
+    const steep = p.avg_slope_deg >= 25 ? 'Very steep' : 'Steep';
+    reasons.push(`${steep} terrain (avg ${p.avg_slope_deg}° slope)`);
+  }
+  if (p.seasonal_restriction) reasons.push(`Known seasonal risk: ${p.seasonal_restriction}`);
+  if (p.has_bridge) reasons.push(`Includes a bridge crossing`);
+  return reasons;
+}
+
+function reasonsHtml(reasons) {
+  if (reasons.length === 0) return '';
+  return `<div style="margin-top:4px; font-size:12px; color:#ccc;">${reasons.map(r => `• ${r}`).join('<br/>')}</div>`;
+}
+
+// Risk-level markers (separate from the alerts-table markers below) --
+// one per distinct risky stretch of a SEARCHED route, not the whole
+// network, so the map stays fast and uncluttered. Sized/colored by
+// severity so moderate stretches are visible but not alarming.
+function riskLevelIcon(level) {
+  const style = {
+    moderate: { size: 18, bg: '#eab308', symbol: '!' },
+    high: { size: 24, bg: '#f97316', symbol: '⚠' },
+    severe: { size: 28, bg: '#dc2626', symbol: '⚠' },
+  }[level];
+  if (!style) return null;
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${style.bg}; width:${style.size}px; height:${style.size}px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:${style.size - 14}px; font-weight:bold; color:white;">${style.symbol}</div>`,
+    iconSize: [style.size, style.size],
+    iconAnchor: [style.size / 2, style.size / 2],
+  });
+}
+
+// --- Alert map markers (like Google Maps' construction/caution icons) ---
+const ALERT_ICON_EMOJI = {
+  blocked_road: '🚧',
+  high_risk: '⚠️',
+  emergency: '🆘',
+  delivery_delay: '⏱️',
+};
+function alertIconFor(alert) {
+  const emoji = ALERT_ICON_EMOJI[alert.alert_type] || '⚠️';
+  const bg = alert.severity === 'critical' ? '#dc2626' : alert.severity === 'warning' ? '#f97316' : '#3b82f6';
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${bg}; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:14px;">${emoji}</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+function segmentMidpoint(segmentId) {
+  if (!segmentsData) return null;
+  const feature = segmentsData.features.find(f => f.properties.id === segmentId);
+  if (!feature) return null;
+  const coords = feature.geometry.coordinates;
+  const mid = coords[Math.floor(coords.length / 2)];
+  return [mid[1], mid[0]]; // Leaflet wants [lat, lon]; GeoJSON stores [lon, lat]
+}
+let alertMarkers = [];
+function renderAlertMarkers(alerts) {
+  alertMarkers.forEach(m => map.removeLayer(m));
+  alertMarkers = [];
+  alerts.forEach(a => {
+    const pos = segmentMidpoint(a.segment_id);
+    if (!pos) return; // segment not in the currently loaded network -- skip rather than mis-place it
+    const marker = L.marker(pos, { icon: alertIconFor(a) }).addTo(map);
+    marker.bindPopup(`<b>${a.segment_name}</b><br/><span style="text-transform:capitalize">${a.alert_type.replace(/_/g, ' ')}</span> (${a.severity})<br/>${a.message}`);
+    alertMarkers.push(marker);
+  });
+}
+
+// --- Field reports (crowdsourced: landslide, flood, road damage, etc.) ---
+const FIELD_REPORT_EMOJI = {
+  landslide: '🏔️', flood: '🌊', road_damage: '🕳️',
+  bridge_damage: '🌉', congestion: '🚗', clear: '✅',
+};
+function fieldReportIcon(report) {
+  const emoji = FIELD_REPORT_EMOJI[report.report_type] || '❓';
+  const border = report.verified ? '#22c55e' : '#94a3b8'; // green if corroborated/official, gray if not yet
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:#1e293b; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid ${border}; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:15px;">${emoji}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+}
+// --- Accommodation map markers (hotel/guest_house/motel/hostel/lodging) ---
+function accommodationIcon() {
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:#0ea5e9; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:14px;">🛏️</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+// Shared popup markup for an accommodation, used both when the map
+// marker is first placed and when re-opened from a sidebar card --
+// keeps the details consistent in both places.
+function accommodationPopupHtml(h) {
+  return `
+    <b>${h.name}</b> <span style="color:#666;text-transform:capitalize;">${(h.type || '').replace(/_/g, ' ')}</span><br/>
+    ${h.distanceKm.toFixed(1)} km away
+    ${h.phone ? `<br/>📞 ${h.phone}` : ''}
+    ${h.address ? `<br/>📍 ${h.address}` : ''}
+  `;
+}
+function timeAgo(isoString) {
+  if (!isoString) return '';
+  const diffMin = Math.round((Date.now() - new Date(isoString).getTime()) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1440) return `${Math.round(diffMin / 60)}h ago`;
+  return `${Math.round(diffMin / 1440)}d ago`;
+}
+
+let fieldReportMarkers = [];
+let reportPinMarker = null;
+let reportModeActive = false;
+let reportLat = null, reportLon = null;
+
+function startFieldReport() {
+  reportModeActive = true;
+  document.getElementById('fieldReportForm').style.display = 'block';
+  document.getElementById('reportIssueBtn').disabled = true;
+  const statusEl = document.getElementById('reportLocationStatus');
+  statusEl.textContent = 'Locating you...';
+
+  if (!navigator.geolocation) {
+    statusEl.textContent = 'GPS not available -- click on the map to set the location.';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      setReportLocation(pos.coords.latitude, pos.coords.longitude);
+      statusEl.textContent = 'Location set from GPS -- click the map to adjust if needed.';
+    },
+    () => {
+      statusEl.textContent = 'Could not get GPS -- click on the map to set the location.';
+    },
+    { timeout: 8000 }
+  );
+}
+
+function setReportLocation(lat, lon) {
+  reportLat = lat; reportLon = lon;
+  if (reportPinMarker) map.removeLayer(reportPinMarker);
+  reportPinMarker = L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="font-size:28px;">📍</div>`,
+      iconSize: [28, 28], iconAnchor: [14, 28],
+    }),
+  }).addTo(map);
+  map.setView([lat, lon], Math.max(map.getZoom(), 12));
+}
+
+function cancelFieldReport() {
+  reportModeActive = false;
+  document.getElementById('fieldReportForm').style.display = 'none';
+  document.getElementById('reportIssueBtn').disabled = false;
+  if (reportPinMarker) { map.removeLayer(reportPinMarker); reportPinMarker = null; }
+  reportLat = null; reportLon = null;
+  document.getElementById('reportDescription').value = '';
+}
+
+async function submitFieldReport() {
+  if (reportLat === null || reportLon === null) {
+    document.getElementById('reportLocationStatus').textContent = 'Set a location first (GPS or click the map).';
+    return;
+  }
+  const report_type = document.getElementById('reportType').value;
+  const description = document.getElementById('reportDescription').value.trim();
+  const reporter_name = document.getElementById('reporterName').value.trim() || null;
+
+  try {
+    const res = await fetch(`${API_BASE}/field-reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: reportLat, lon: reportLon, report_type, description, reporter_name }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    cancelFieldReport();
+    loadFieldReports();
+  } catch (err) {
+    document.getElementById('reportLocationStatus').textContent = `Could not submit: ${err.message}`;
+  }
+}
+
+let fieldReportsData = [];
+let adhocReportMarker = null;
+
+function fieldReportPopupHtml(r) {
+  return `
+    <b>${(r.report_type || '').replace(/_/g, ' ').toUpperCase()}</b> ${r.verified ? '✅ verified' : ''}<br/>
+    ${r.description ? `${r.description}<br/>` : ''}
+    ${r.segment_name ? `Near: ${r.segment_name}<br/>` : ''}
+    By ${r.reporter_name || 'Anonymous'} · ${timeAgo(r.captured_at)}
+    ${r.corroborated_by > 0 ? `<br/>Corroborated by ${r.corroborated_by} other report(s)` : ''}
+  `;
+}
+
+// Shows just the ONE clicked report on the map, regardless of whether
+// a route is currently selected -- for browsing the sidebar list.
+function showFieldReportOnMap(idx) {
+  const r = fieldReportsData[idx];
+  if (!r) return;
+  if (adhocReportMarker) map.removeLayer(adhocReportMarker);
+  adhocReportMarker = L.marker([r.lat, r.lon], { icon: fieldReportIcon(r) }).addTo(map);
+  adhocReportMarker.bindPopup(fieldReportPopupHtml(r)).openPopup();
+  map.setView([r.lat, r.lon], 13);
+}
+
+// Only shows reports actually near the given route -- not the whole
+// database, so switching routes clears out irrelevant reports instead
+// of leaving stale icons sitting on unrelated parts of the map.
+function renderFieldReportMarkersForRoute(routeCoords, thresholdKm = 10) {
+  fieldReportMarkers.forEach(m => map.removeLayer(m));
+  fieldReportMarkers = [];
+  if (!routeCoords || fieldReportsData.length === 0) return;
+  const sampled = routeCoords.filter((_, i) => i % 15 === 0);
+
+  fieldReportsData.forEach(r => {
+    const isNear = sampled.some(pt => haversineKm(pt, [r.lat, r.lon]) <= thresholdKm);
+    if (!isNear) return;
+    const marker = L.marker([r.lat, r.lon], { icon: fieldReportIcon(r) }).addTo(map);
+    marker.bindPopup(fieldReportPopupHtml(r));
+    fieldReportMarkers.push(marker);
+  });
+}
+
+async function loadFieldReports() {
+  try {
+    const res = await fetch(`${API_BASE}/field-reports`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    fieldReportsData = await res.json();
+
+    document.getElementById('fieldReportCount').textContent = fieldReportsData.length;
+
+    // Refresh markers for whatever route is currently on screen (e.g.
+    // after submitting a new report), rather than dumping every report
+    // onto the map unconditionally.
+    if (customRouteOptions.length > 0) {
+      renderFieldReportMarkersForRoute(customRouteOptions[selectedRouteIndex].route.coords);
+    }
+
+    const listEl = document.getElementById('fieldReportsList');
+    if (fieldReportsData.length === 0) {
+      listEl.innerHTML = '<div class="status-line">No field reports yet.</div>';
+      return;
+    }
+    listEl.innerHTML = fieldReportsData.slice(0, 10).map((r, idx) => `
+      <div class="segment-card" onclick="showFieldReportOnMap(${idx})" style="cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>${FIELD_REPORT_EMOJI[r.report_type] || ''} ${(r.report_type || '').replace(/_/g, ' ')}</span>
+          ${r.verified ? '<span style="color:#22c55e; font-size:12px;">✅ verified</span>' : '<span style="color:#94a3b8; font-size:12px;">unverified</span>'}
+        </div>
+        <div class="status-line">${r.description || 'No description'} · ${timeAgo(r.captured_at)}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    document.getElementById('fieldReportsList').innerHTML = '<div class="status-line">Failed to load field reports.</div>';
+  }
+}
+
+// Map clicks adjust the pending report's pin while report mode is active
+// (added once here, guarded by reportModeActive inside).
+map.on('click', (e) => {
+  if (!reportModeActive) return;
+  setReportLocation(e.latlng.lat, e.latlng.lng);
+  document.getElementById('reportLocationStatus').textContent = 'Location set manually.';
+});
+
+// --- Nearby Help (live location sharing + stuck/SOS lookup) ---
+const driverSessionId = 'sess_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+let isSharingLocation = false;
+let locationShareWatchId = null;
+let lastKnownPos = null; // { lat, lon }
+let lastSharePostAt = 0;
+let nearbyHelpMarkers = [];
+let shareSelfMarker = null;
+let lastNearbyResults = [];
+
+function showNearbyPersonOnMap(idx) {
+  const d = lastNearbyResults[idx];
+  if (!d) return;
+  map.setView([d.lat, d.lon], 14);
+  const marker = nearbyHelpMarkers[idx];
+  if (marker) {
+    marker.openPopup();
+  } else {
+    L.popup()
+      .setLatLng([d.lat, d.lon])
+      .setContent(nearbyPersonPopupHtml(d, idx))
+      .openOn(map);
+  }
+}
+
+// Shared popup markup for a nearby driver/field officer, used both
+// when the map marker is first placed and when re-opened from the
+// sidebar list -- keeps the Notify button consistent in both places.
+function nearbyPersonPopupHtml(d, idx) {
+  const safeName = (d.driver_name || '').replace(/'/g, "\\'");
+  return `
+    <b>${d.driver_name}</b> (${d.role === 'field_official' ? 'Field Official' : 'Driver'})<br/>
+    ${d.distance_km} km away${d.phone ? `<br/>📞 ${d.phone}` : ''}<br/>
+    <button onclick="notifyPerson(${idx})" style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#3b82f6;color:white;font-size:12px;cursor:pointer;">🔔 Notify</button>
+    <button onclick="openChat('${d.session_id}', '${safeName}', '${d.role}')" class="chat-btn">💬 Chat</button>
+  `;
+}
+
+// Sends a direct, targeted notification to one specific person (the
+// one whose popup the button was clicked on) -- more reliable than
+// the automatic "someone nearby is stuck" polling, which only fires
+// for status='stuck' and can be slow or miss the right person.
+async function notifyPerson(idx) {
+  const d = lastNearbyResults[idx];
+  if (!d) return;
+  await sendNotify(d.session_id, d.driver_name);
+}
+
+async function sendNotify(toSessionId, toDisplayName) {
+  const myName = document.getElementById('driverName').value.trim() || 'Someone nearby';
+  const myPhone = document.getElementById('driverPhone').value.trim() || null;
+  const myRole = document.getElementById('driverRole').value;
+  try {
+    const res = await fetch(`${API_BASE}/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to_session_id: toSessionId,
+        from_session_id: driverSessionId,
+        from_name: myName,
+        from_phone: myPhone,
+        from_role: myRole,
+        lat: lastKnownPos ? lastKnownPos.lat : null,
+        lon: lastKnownPos ? lastKnownPos.lon : null,
+      }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    map.closePopup();
+    alert(`Notified ${toDisplayName}.`);
+  } catch (err) {
+    alert(`Could not send notification: ${err.message}`);
+  }
+}
+// --- Shipment Board (cargo-sharing / merge-a-load) ---
+let lastShipmentMatches = [];
+
+function toggleShipmentForm() {
+  const form = document.getElementById('shipmentForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function cargoTypeIcon(t) {
+  return { medicine: '💊', food: '🌾', construction: '🧱', agriculture: '🚜' }[t] || '📦';
+}
+
+// Same resolve-from-autocomplete-or-geocode pattern as findCustomRoute's
+// fromText/toText -- lets a picked suggestion skip a redundant geocode call.
+async function resolveShipPlace(inputEl) {
+  const text = inputEl.value.trim();
+  if (!text) throw new Error('Enter both From and To first.');
+  if (inputEl.dataset.lat && inputEl.dataset.lon) {
+    return { lat: parseFloat(inputEl.dataset.lat), lon: parseFloat(inputEl.dataset.lon), label: inputEl.value };
+  }
+  return geocodePlace(text);
+}
+
+let myOpenShipmentPostId = null;
+
+async function submitShipmentPost() {
+  const name = document.getElementById('driverName').value.trim();
+  const phone = document.getElementById('driverPhone').value.trim();
+  const originInput = document.getElementById('shipOrigin');
+  const destInput = document.getElementById('shipDest');
+  const travelDate = document.getElementById('shipDate').value;
+  if (!name || !phone) { alert('Fill in your name and phone above (in the Nearby Help section) first.'); return; }
+  if (!originInput.value.trim() || !destInput.value.trim() || !travelDate) { alert('From, To and Date are required.'); return; }
+
+  let originPlace, destPlace;
+  try {
+    [originPlace, destPlace] = await Promise.all([resolveShipPlace(originInput), resolveShipPlace(destInput)]);
+  } catch (err) {
+    alert(`Could not resolve From/To: ${err.message}`);
+    return;
+  }
+
+  const originText = originInput.value.trim();
+  const destText = destInput.value.trim();
+  const travelTime = document.getElementById('shipTime').value || null; // 'HH:MM' or null
+  const body = {
+    session_id: driverSessionId,
+    driver_name: name,
+    phone: phone,
+    vehicle_reg: document.getElementById('shipVehicleReg').value.trim() || null,
+    origin_text: originText,
+    origin_lat: originPlace.lat,
+    origin_lon: originPlace.lon,
+    dest_text: destText,
+    dest_lat: destPlace.lat,
+    dest_lon: destPlace.lon,
+    travel_date: travelDate,
+    travel_time: travelTime,
+    cargo_type: document.getElementById('shipCargoType').value,
+    available_capacity_kg: document.getElementById('shipCapacity').value ? parseInt(document.getElementById('shipCapacity').value) : null,
+    space_notes: document.getElementById('shipNotes').value.trim() || null,
+  };
+  try {
+    const res = await fetch(`${API_BASE}/shipment-board`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const result = await res.json();
+    myOpenShipmentPostId = result.id;
+    toggleShipmentForm();
+    ['shipOrigin', 'shipDest', 'shipDate', 'shipTime', 'shipCapacity', 'shipVehicleReg', 'shipNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('shipmentMatchResults').innerHTML = `
+      <div class="shipment-card" style="border-left:3px solid #22c55e;">
+        <b>✅ Posted:</b> ${originText} → ${destText} (${travelDate})
+        <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#3a3a4a;color:white;font-size:12px;cursor:pointer;display:block;" onclick="markShipmentDone()">Mark merged / remove</button>
+      </div>`;
+  } catch (err) {
+    alert(`Could not post to the shipment board: ${err.message}`);
+  }
+}
+
+// Finds open board posts that are effectively the "same trip" as the
+// one in the post form -- either endpoint within MATCH_RADIUS_KM of
+// the corresponding endpoint, checked in BOTH directions, so a
+// Dimapur->Kohima post matches Kohima->Dimapur posts too (a return
+// leg is exactly the kind of match this board exists to surface).
+// Pure geographic comparison -- no routing calls needed, so this is
+// instant even with many open posts. Shared by the manual "Find
+// Matches" button and the automatic route-search matching below.
+const SHIPMENT_MATCH_RADIUS_KM = 10;
+
+function scoreShipmentCandidates(myOrigin, myDest, candidates, excludeSessionId) {
+  const scored = [];
+  candidates.forEach(p => {
+    if (p.session_id === excludeSessionId || p.origin_lat == null || p.dest_lat == null) return;
+    const originToOrigin = haversineKm([myOrigin.lat, myOrigin.lon], [p.origin_lat, p.origin_lon]);
+    const destToDest = haversineKm([myDest.lat, myDest.lon], [p.dest_lat, p.dest_lon]);
+    const originToDest = haversineKm([myOrigin.lat, myOrigin.lon], [p.dest_lat, p.dest_lon]);
+    const destToOrigin = haversineKm([myDest.lat, myDest.lon], [p.origin_lat, p.origin_lon]);
+
+    const sameDirection = originToOrigin <= SHIPMENT_MATCH_RADIUS_KM && destToDest <= SHIPMENT_MATCH_RADIUS_KM;
+    const reverseDirection = originToDest <= SHIPMENT_MATCH_RADIUS_KM && destToOrigin <= SHIPMENT_MATCH_RADIUS_KM;
+    if (!sameDirection && !reverseDirection) return;
+
+    const closeness = sameDirection ? (originToOrigin + destToDest) : (originToDest + destToOrigin);
+    scored.push({ post: p, reverse: reverseDirection && !sameDirection, closeness });
+  });
+  scored.sort((a, b) => a.closeness - b.closeness);
+  return scored;
+}
+
+// Hours from now until a post's departure. Falls back to end-of-day
+// (23:59) when the driver didn't give a specific time -- so a
+// date-only post is never wrongly treated as "departing in the next
+// 2-3 hours" just because today happens to match.
+function hoursUntilDeparture(post) {
+  const timeStr = post.travel_time || '23:59';
+  const departure = new Date(`${post.travel_date}T${timeStr}:00`);
+  return (departure.getTime() - Date.now()) / (1000 * 60 * 60);
+}
+
+function shipmentMatchCardHtml(s, idx, contactFn) {
+  return `
+    <div class="shipment-card">
+      <b>${s.reverse ? '🔁 Return-leg match' : '➡️ Same-direction match'}</b> · ${cargoTypeIcon(s.post.cargo_type)} ${s.post.origin_text} → ${s.post.dest_text}<br/>
+      <span class="status-line">${s.post.travel_date}${s.post.travel_time ? ' · ' + s.post.travel_time : ''} · ${s.post.driver_name}${s.post.available_capacity_kg ? ` · ${s.post.available_capacity_kg} kg spare` : ''}</span><br/>
+      <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#22c55e;color:white;font-size:12px;cursor:pointer;" onclick="${contactFn}(${idx})">🔔 Contact to Merge</button>
+    </div>
+  `;
+}
+
+async function findShipmentMatches() {
+  const resultsDiv = document.getElementById('shipmentMatchResults');
+  const originInput = document.getElementById('shipOrigin');
+  const destInput = document.getElementById('shipDest');
+  if (!originInput.value.trim() || !destInput.value.trim()) {
+    resultsDiv.innerHTML = '<div class="status-line" style="margin-top:8px;">Enter From and To above first.</div>';
+    return;
+  }
+  resultsDiv.innerHTML = '<div class="status-line" style="margin-top:8px;">Finding drivers on a similar route...</div>';
+
+  let myOrigin, myDest;
+  try {
+    [myOrigin, myDest] = await Promise.all([resolveShipPlace(originInput), resolveShipPlace(destInput)]);
+  } catch (err) {
+    resultsDiv.innerHTML = `<div class="status-line" style="margin-top:8px;">${err.message}</div>`;
+    return;
+  }
+
+  const travelDate = document.getElementById('shipDate').value;
+  const res = await fetch(`${API_BASE}/shipment-board${travelDate ? `?travel_date=${travelDate}` : ''}`);
+  const candidates = await res.json();
+  const scored = scoreShipmentCandidates(myOrigin, myDest, candidates, driverSessionId);
+  lastShipmentMatches = scored.map(s => s.post);
+
+  if (scored.length === 0) {
+    resultsDiv.innerHTML = `<div class="status-line" style="margin-top:8px;">No open posts within ${SHIPMENT_MATCH_RADIUS_KM}km of this route (either direction) yet.</div>`;
+    return;
+  }
+  resultsDiv.innerHTML = scored.map((s, idx) => shipmentMatchCardHtml(s, idx, 'contactShipmentMatch')).join('');
+}
+
+async function contactShipmentMatch(idx) {
+  const p = lastShipmentMatches[idx];
+  if (!p) return;
+  await sendNotify(p.session_id, p.driver_name);
+}
+
+// Automatically surfaces shipment-board matches the moment a driver
+// searches a route -- no need to separately open the Shipment Board
+// form and search again for the same trip. Split into two buckets:
+// trips departing soon (within ~3 hours) are the ones worth acting on
+// right now, so they get top billing as "Find Trips"; anything else
+// open within the next 3 days is secondary, in "Find Other Trips".
+const URGENT_WINDOW_HOURS = 3;
+const OTHER_WINDOW_HOURS = 72; // 3 days
+let lastRouteShipmentMatches = [];
+
+async function autoFindShipmentMatchesForRoute(myOrigin, myDest) {
+  const container = document.getElementById('routeShipmentMatches');
+  if (!container) return;
+  try {
+    const res = await fetch(`${API_BASE}/shipment-board`);
+    const candidates = await res.json();
+    const scored = scoreShipmentCandidates(myOrigin, myDest, candidates, driverSessionId);
+
+    const urgent = [], other = [];
+    scored.forEach(s => {
+      const hrs = hoursUntilDeparture(s.post);
+      if (hrs < 0 || hrs > OTHER_WINDOW_HOURS) return; // already left, or too far out to be useful here
+      (hrs <= URGENT_WINDOW_HOURS ? urgent : other).push(s);
+    });
+    lastRouteShipmentMatches = [...urgent, ...other].map(s => s.post);
+
+    if (urgent.length === 0 && other.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    let html = '';
+    if (urgent.length > 0) {
+      html += `<div class="section-title" style="margin-top:14px;">🚀 Find Trips (departing within ${URGENT_WINDOW_HOURS}h)</div>`;
+      html += urgent.map((s, i) => shipmentMatchCardHtml(s, i, 'contactRouteShipmentMatch')).join('');
+    }
+    if (other.length > 0) {
+      html += `<div class="section-title" style="margin-top:14px;">📅 Find Other Trips (next 3 days)</div>`;
+      html += other.map((s, i) => shipmentMatchCardHtml(s, urgent.length + i, 'contactRouteShipmentMatch')).join('');
+    }
+    container.innerHTML = html;
+  } catch {
+    container.innerHTML = ''; // this is a bonus surfaced alongside route search -- fail quietly, don't block the route result
+  }
+}
+
+async function contactRouteShipmentMatch(idx) {
+  const p = lastRouteShipmentMatches[idx];
+  if (!p) return;
+  await sendNotify(p.session_id, p.driver_name);
+}
+
+async function markShipmentDone() {
+  if (!myOpenShipmentPostId) return;
+  try {
+    await fetch(`${API_BASE}/shipment-board/${myOpenShipmentPostId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: driverSessionId, status: 'merged' }),
+    });
+    myOpenShipmentPostId = null;
+    document.getElementById('shipmentMatchResults').innerHTML = '<div class="status-line">Marked merged -- removed from the board.</div>';
+  } catch (err) {
+    alert(`Could not update the post: ${err.message}`);
+  }
+}
+
+let rideActive = false;
+let currentDestinationLatLon = null; // set when a route is searched; used to reroute if stuck
+let stuckAltRouteLine = null;
+let notifiedStuckSessionIds = new Set();
+let currentNotifyDriver = null;
+
+function updateStuckButtonState() {
+  document.getElementById('stuckBtn').disabled = !rideActive;
+  document.getElementById('stuckHint').style.display = rideActive ? 'none' : 'block';
+}
+
+function nearbyIcon(role, status) {
+  const emoji = role === 'field_official' ? '👮' : '🚚';
+  const bg = status === 'stuck' ? '#dc2626' : '#2563eb';
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${bg}; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:13px;">${emoji}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+}
+
+async function postDriverLocation(lat, lon, status) {
+  const name = document.getElementById('driverName').value.trim() || 'Anonymous';
+  const phone = document.getElementById('driverPhone').value.trim() || null;
+  const role = document.getElementById('driverRole').value;
+  try {
+    await fetch(`${API_BASE}/drivers/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: driverSessionId, driver_name: name, phone, role, lat, lon, status }),
+    });
+  } catch { /* best-effort -- a missed ping just means a slightly stale position until the next one */ }
+}
+
+function dismissStuckNotify() {
+  document.getElementById('stuckNotifyModal').style.display = 'none';
+}
+
+function viewStuckOnMap() {
+  if (!currentNotifyDriver) return;
+  const safeName = currentNotifyDriver.driver_name.replace(/'/g, "\\'");
+  const marker = L.marker([currentNotifyDriver.lat, currentNotifyDriver.lon], { icon: nearbyIcon(currentNotifyDriver.role, 'stuck') }).addTo(map);
+  marker.bindPopup(`
+    <b>${currentNotifyDriver.driver_name}</b><br/>
+    ${currentNotifyDriver.distance_km} km away${currentNotifyDriver.phone ? `<br/>📞 ${currentNotifyDriver.phone}` : ''}<br/>
+    <button onclick="sendNotify('${currentNotifyDriver.session_id}', '${safeName}')" style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#3b82f6;color:white;font-size:12px;cursor:pointer;">🔔 Notify</button>
+    <button onclick="openChat('${currentNotifyDriver.session_id}', '${safeName}', '${currentNotifyDriver.role}')" class="chat-btn">💬 Chat</button>
+  `).openPopup();
+  map.setView([currentNotifyDriver.lat, currentNotifyDriver.lon], 13);
+  dismissStuckNotify();
+}
+
+function showStuckNotification(driver) {
+  currentNotifyDriver = driver;
+  document.getElementById('stuckNotifyContent').innerHTML = `
+    <b>${driver.driver_name}</b> (${driver.role === 'field_official' ? 'Field Official' : 'Driver'})<br/>
+    ${driver.distance_km} km away${driver.phone ? `<br/>📞 ${driver.phone}` : ''}
+  `;
+  document.getElementById('stuckNotifyModal').style.display = 'block';
+}
+
+function chatWithCurrentNotifyDriver() {
+  if (!currentNotifyDriver) return;
+  dismissStuckNotify();
+  openChat(currentNotifyDriver.session_id, currentNotifyDriver.driver_name, currentNotifyDriver.role);
+}
+
+// While actively sharing, periodically check whether anyone newly
+// stuck has appeared nearby, and pop a notification the first time
+// each one is seen (tracked in notifiedStuckSessionIds so it doesn't
+// re-alert every poll for the same person).
+async function checkForNearbyStuckAlerts() {
+  if (!isSharingLocation || !lastKnownPos) return;
+  try {
+    const res = await fetch(`${API_BASE}/drivers/nearby?lat=${lastKnownPos.lat}&lon=${lastKnownPos.lon}&exclude=${driverSessionId}&radius_km=25`);
+    if (!res.ok) return;
+    const nearby = await res.json();
+    const newlyStuck = nearby.find(d => d.status === 'stuck' && !notifiedStuckSessionIds.has(d.session_id));
+    if (newlyStuck) {
+      notifiedStuckSessionIds.add(newlyStuck.session_id);
+      showStuckNotification(newlyStuck);
+    }
+  } catch { /* silent -- best-effort background polling */ }
+}
+setInterval(checkForNearbyStuckAlerts, 30000);
+
+function toggleLocationSharing() {
+  const statusEl = document.getElementById('shareStatus');
+  const btn = document.getElementById('shareLocationBtn');
+
+  if (isSharingLocation) {
+    if (locationShareWatchId !== null) navigator.geolocation.clearWatch(locationShareWatchId);
+    locationShareWatchId = null;
+    isSharingLocation = false;
+    if (shareSelfMarker) { map.removeLayer(shareSelfMarker); shareSelfMarker = null; }
+    fetch(`${API_BASE}/drivers/location/${driverSessionId}`, { method: 'DELETE' }).catch(() => {});
+    btn.textContent = 'Start Sharing My Location';
+    statusEl.textContent = 'Not sharing.';
+    return;
+  }
+
+  if (!navigator.geolocation) { statusEl.textContent = 'GPS not available in this browser.'; return; }
+  const name = document.getElementById('driverName').value.trim();
+  const phone = document.getElementById('driverPhone').value.trim();
+  if (!name || !phone) { statusEl.textContent = 'Enter your name and phone number first.'; return; }
+
+  statusEl.textContent = 'Getting your location...';
+  locationShareWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      // While a simulated ride is running, its position (fed via
+      // updateRideMarker) is the shared location instead -- skip here
+      // so the two don't overwrite each other every few seconds.
+      if (simInterval !== null) {
+        statusEl.textContent = `Sharing simulated ride position as ${name}.`;
+        return;
+      }
+      lastKnownPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      if (!shareSelfMarker) {
+        shareSelfMarker = L.marker([lastKnownPos.lat, lastKnownPos.lon], { icon: pulsingDotIcon() }).addTo(map);
+      } else {
+        shareSelfMarker.setLatLng([lastKnownPos.lat, lastKnownPos.lon]);
+      }
+      const now = Date.now();
+      if (now - lastSharePostAt > 10000) { // throttle to one update every 10s, not every GPS tick
+        lastSharePostAt = now;
+        postDriverLocation(lastKnownPos.lat, lastKnownPos.lon, 'active');
+      }
+      statusEl.textContent = `Sharing live location as ${name}.`;
+    },
+    (err) => { statusEl.textContent = `Could not get location: ${err.message}`; },
+    { enableHighAccuracy: true, maximumAge: 5000 }
+  );
+  isSharingLocation = true;
+  btn.textContent = 'Stop Sharing';
+}
+
+// Calls the backend's /accommodations endpoint (accommodations.py)
+// instead of hitting Overpass straight from the browser. The old
+// approach failed silently most of the time -- Overpass requires a
+// real User-Agent header, which browser fetch() is not allowed to
+// set, so requests were routinely rejected or rate-limited with no
+// visible error (just an empty "no accommodation found" message,
+// whether or not any actually existed).
+async function fetchNearbyAccommodation(lat, lon, radiusKm = 15, limit = 8) {
+  try {
+    const res = await fetch(`${API_BASE}/accommodations?lat=${lat}&lon=${lon}&radius_km=${radiusKm}&limit=${limit}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.map(h => ({ name: h.name, type: h.type, lat: h.lat, lon: h.lon, distanceKm: h.distance_km, address: h.address, phone: h.phone }));
+  } catch {
+    return [];
+  }
+}
+
+// Standalone "Nearby Accommodations" section -- independent of the
+// "I'm Stuck" SOS flow, so you can look up a place to rest any time,
+// not only during an active emergency. Uses your real GPS if
+// available, falling back to wherever a route was last searched.
+async function findAccommodationsNearMe() {
+  const resultsDiv = document.getElementById('accommodationsResults');
+  resultsDiv.innerHTML = '<div class="status-line">Getting your location...</div>';
+
+  const getPos = () => new Promise((resolve, reject) => {
+    if (lastKnownPos) return resolve(lastKnownPos);
+    if (!navigator.geolocation) return reject(new Error('GPS not available.'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      err => reject(new Error(err.message)),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  });
+
+  let pos;
+  try {
+    pos = await getPos();
+  } catch (err) {
+    resultsDiv.innerHTML = currentDestinationLatLon
+      ? '<div class="status-line">Could not get your GPS -- showing results near your searched destination instead.</div>'
+      : `<div class="status-line">${err.message}</div>`;
+    if (!currentDestinationLatLon) return;
+    pos = currentDestinationLatLon;
+  }
+
+  resultsDiv.innerHTML = '<div class="status-line">Looking for nearby accommodation...</div>';
+  const hotels = await fetchNearbyAccommodation(pos.lat, pos.lon);
+
+  accommodationMarkers.forEach(m => map.removeLayer(m));
+  accommodationMarkers = hotels.map(h => {
+    const marker = L.marker([h.lat, h.lon], { icon: accommodationIcon() }).addTo(map);
+    marker.bindPopup(accommodationPopupHtml(h));
+    return marker;
+  });
+  lastAccommodationResults = hotels;
+
+  resultsDiv.innerHTML = hotels.length > 0
+    ? hotels.map((h, idx) => `
+        <div class="segment-card" onclick="showAccommodationOnMap(${idx})" style="cursor:pointer;">
+          <b>${h.name}</b> <span style="color:#999;">${(h.type || '').replace(/_/g, ' ')}</span>
+          <div class="status-line">${h.distanceKm.toFixed(1)} km away${h.phone ? ` · 📞 ${h.phone}` : ''}${h.address ? ` · ${h.address}` : ''}</div>
+        </div>
+      `).join('')
+    : '<div class="status-line">No nearby accommodation found within 15km.</div>';
+}
+
+let accommodationMarkers = [];
+let lastAccommodationResults = [];
+
+function showAccommodationOnMap(idx) {
+  const h = lastAccommodationResults[idx];
+  if (!h) return;
+  map.setView([h.lat, h.lon], 14);
+  const marker = accommodationMarkers[idx];
+  if (marker) {
+    marker.openPopup();
+  } else {
+    L.popup()
+      .setLatLng([h.lat, h.lon])
+      .setContent(accommodationPopupHtml(h))
+      .openOn(map);
+  }
+}
+
+let nearbyHelpPollId = null;   // keeps the contact list live instead of frozen at whatever it showed on first search
+let nearbyHelpPollPos = null;
+
+// The backend already excludes anyone inactive for 15+ min
+// (fetch_nearby_drivers' max_age_minutes filter), but the frontend
+// only ever called it once per "I'm Stuck" click, so a contact who
+// went stale server-side stayed on screen indefinitely until you
+// triggered another action. Polling re-runs the same query so the
+// list actually drops people once they age out.
+function stopNearbyHelpPolling() {
+  if (nearbyHelpPollId !== null) { clearInterval(nearbyHelpPollId); nearbyHelpPollId = null; }
+}
+
+async function refreshNearbyPeople(pos, sections, render) {
+  sections.people = '<div class="status-line">Searching nearby...</div>'; render();
+  try {
+    const res = await fetch(`${API_BASE}/drivers/nearby?lat=${pos.lat}&lon=${pos.lon}&exclude=${driverSessionId}&radius_km=25`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const nearby = await res.json();
+
+    nearbyHelpMarkers.forEach(m => map.removeLayer(m));
+    nearbyHelpMarkers = nearby.map((d, idx) => {
+      const marker = L.marker([d.lat, d.lon], { icon: nearbyIcon(d.role, d.status) }).addTo(map);
+      marker.bindPopup(nearbyPersonPopupHtml(d, idx));
+      return marker;
+    });
+    lastNearbyResults = nearby;
+
+    sections.people = nearby.length === 0
+      ? '<div class="status-line">No one else nearby right now (within 25km, active in the last 15 min). Your SOS is now visible to anyone else who searches.</div>'
+      : nearby.map((d, idx) => `
+          <div class="segment-card" onclick="showNearbyPersonOnMap(${idx})" style="cursor:pointer;">
+            <b>${d.driver_name}</b> ${d.role === 'field_official' ? '👮 Field Official' : '🚚 Driver'}
+            <div class="status-line">${d.distance_km} km away${d.phone ? ` · 📞 ${d.phone}` : ''}</div>
+          </div>
+        `).join('');
+  } catch (err) {
+    sections.people = `<div class="status-line">${err.message}</div>`;
+  }
+  render();
+}
+
+async function findNearbyHelp() {
+  const resultsDiv = document.getElementById('nearbyHelpResults');
+  const name = document.getElementById('driverName').value.trim();
+  const phone = document.getElementById('driverPhone').value.trim();
+  if (!name || !phone) { resultsDiv.innerHTML = '<div class="status-line">Enter your name and phone number first.</div>'; return; }
+
+  let sections = { people: 'Getting your location...', route: '', rest: '' };
+  const render = () => { resultsDiv.innerHTML = sections.people + sections.route + sections.rest; };
+  render();
+
+  const getPos = () => new Promise((resolve, reject) => {
+    if (lastKnownPos) return resolve(lastKnownPos);
+    if (!navigator.geolocation) return reject(new Error('GPS not available.'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      err => reject(new Error(err.message)),
+      { enableHighAccuracy: true }
+    );
+  });
+
+  let pos;
+  try {
+    pos = await getPos();
+    lastKnownPos = pos;
+  } catch (err) {
+    sections.people = `<div class="status-line">${err.message}</div>`; render();
+    return;
+  }
+
+  await postDriverLocation(pos.lat, pos.lon, 'stuck'); // registers self so others searching can see you too
+  map.setView([pos.lat, pos.lon], 11);
+
+  // 1. Nearby people -- kick off a poll so stale contacts age out on
+  // their own instead of sitting there until you take another action.
+  nearbyHelpPollPos = pos;
+  stopNearbyHelpPolling();
+  await refreshNearbyPeople(pos, sections, render);
+  nearbyHelpPollId = setInterval(() => {
+    refreshNearbyPeople(nearbyHelpPollPos, sections, render);
+  }, 45000);
+
+  // 2. Alternate route away from wherever you got stuck
+  if (currentDestinationLatLon) {
+    sections.route = '<div class="status-line" style="margin-top:8px;">Checking for an alternate route...</div>'; render();
+    try {
+      const altRoutes = await fetchRealRoutes([pos.lon, pos.lat], [currentDestinationLatLon.lon, currentDestinationLatLon.lat]);
+      if (stuckAltRouteLine) { map.removeLayer(stuckAltRouteLine); stuckAltRouteLine = null; }
+      if (altRoutes.length > 1) {
+        const alt = altRoutes[1];
+        stuckAltRouteLine = L.polyline(alt.coords, { color: '#a855f7', weight: 5, opacity: 0.9, dashArray: '6,6' }).addTo(map);
+        sections.route = `<div class="route-result" style="border:1px solid #a855f7; margin-top:8px;">🔀 Alternate route found: ${alt.distanceKm.toFixed(1)} km · ~${alt.durationMin.toFixed(0)} min (shown dashed purple)</div>`;
+      } else {
+        sections.route = '<div class="route-result" style="margin-top:8px;">No alternative route found to your destination from here.</div>';
+      }
+    } catch (err) {
+      sections.route = `<div class="route-result" style="margin-top:8px;">Could not check alternate routes: ${err.message}</div>`;
+    }
+  } else {
+    sections.route = '<div class="route-result" style="margin-top:8px;">No destination on file to reroute to.</div>';
+  }
+  render();
+
+  // 3. Suggest resting nearby
+  sections.rest = '<div class="status-line" style="margin-top:8px;">Looking for nearby accommodation...</div>'; render();
+  const hotels = await fetchNearbyAccommodation(pos.lat, pos.lon);
+
+  accommodationMarkers.forEach(m => map.removeLayer(m));
+  accommodationMarkers = hotels.map(h => {
+    const marker = L.marker([h.lat, h.lon], { icon: accommodationIcon() }).addTo(map);
+    marker.bindPopup(accommodationPopupHtml(h));
+    return marker;
+  });
+  lastAccommodationResults = hotels;
+
+  sections.rest = hotels.length > 0
+    ? `<div class="route-result" style="border:1px solid #eab308; margin-top:8px;">
+         🛏️ <b>For your safety, consider resting nearby:</b><br/>
+         ${hotels.map((h, idx) => `<span onclick="showAccommodationOnMap(${idx})" style="cursor:pointer;text-decoration:underline;">${h.name}</span> <span style="color:#999;">(${h.distanceKm.toFixed(1)} km, ${h.type.replace(/_/g, ' ')})</span>`).join('<br/>')}
+       </div>`
+    : '<div class="route-result" style="margin-top:8px;">No nearby accommodation found within 10km.</div>';
+  render();
+}
+
+async function loadAlerts() {
+  try {
+    const res = await fetch(`${API_BASE}/alerts`);
+    const alerts = await res.json();
+    document.getElementById('alertCount').textContent = alerts.length;
+    renderAlertMarkers(alerts);
+    const container = document.getElementById('alertsList');
+    if (alerts.length === 0) { container.innerHTML = '<div class="status-line">No active alerts.</div>'; return; }
+    container.innerHTML = '';
+    alerts.forEach(a => {
+      const div = document.createElement('div');
+      div.className = `alert-card ${a.severity}`;
+      div.innerHTML = `<b>${a.segment_name}</b><br/><span class="status-line">${a.message}</span>`;
+      div.onclick = () => showSegmentOnMap(a.segment_id);
+      container.appendChild(div);
+    });
+  } catch (err) {
+    document.getElementById('alertsList').innerHTML = '<div class="status-line">Failed to load alerts.</div>';
+  }
+}
+
+// Free geocoding via OpenStreetMap's Nominatim service (no API key needed).
+// Biases toward the North East India region so short place names like
+// "Kohima" resolve correctly instead of matching a same-named place elsewhere.
+async function geocodePlace(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Geocoding service returned ${res.status}`);
+  const results = await res.json();
+  if (results.length === 0) throw new Error(`Could not find location: "${query}"`);
+  return { lon: parseFloat(results[0].lon), lat: parseFloat(results[0].lat), label: results[0].display_name };
+}
+
+// --- Place suggestions dropdown (like Google Maps' autocomplete),
+// biased to Nagaland/NER via Nominatim's viewbox. ---
+const NAGALAND_VIEWBOX = '93.2,27.2,95.8,25.0'; // left,top,right,bottom
+async function fetchPlaceSuggestions(query) {
+  if (!query || query.trim().length < 3) return [];
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=in&viewbox=${NAGALAND_VIEWBOX}&q=${encodeURIComponent(query)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+function setupPlaceAutocomplete(inputId, dropdownId) {
+  const inputEl = document.getElementById(inputId);
+  const dropdownEl = document.getElementById(dropdownId);
+  let debounceTimer = null;
+  let currentSuggestions = [];
+  let activeIndex = -1;
+
+  const closeDropdown = () => { dropdownEl.style.display = 'none'; dropdownEl.innerHTML = ''; activeIndex = -1; };
+
+  const pick = (s) => {
+    inputEl.value = s.display_name;
+    inputEl.dataset.lat = s.lat;
+    inputEl.dataset.lon = s.lon;
+    closeDropdown();
+  };
+
+  const render = () => {
+    if (currentSuggestions.length === 0) { closeDropdown(); return; }
+    dropdownEl.innerHTML = currentSuggestions.map((s, i) =>
+      `<div class="suggestion-item${i === activeIndex ? ' active' : ''}" data-idx="${i}">${s.display_name}</div>`
+    ).join('');
+    dropdownEl.style.display = 'block';
+    dropdownEl.querySelectorAll('.suggestion-item').forEach((el, i) => {
+      el.onmousedown = (e) => { e.preventDefault(); pick(currentSuggestions[i]); }; // mousedown fires before blur
+    });
+  };
+
+  inputEl.addEventListener('input', () => {
+    delete inputEl.dataset.lat; delete inputEl.dataset.lon; // typing invalidates a previously picked suggestion
+    clearTimeout(debounceTimer);
+    const query = inputEl.value;
+    debounceTimer = setTimeout(async () => {
+      currentSuggestions = await fetchPlaceSuggestions(query);
+      activeIndex = -1;
+      render();
+    }, 350);
+  });
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (dropdownEl.style.display !== 'block') return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, currentSuggestions.length - 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); render(); }
+    else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(currentSuggestions[activeIndex]); }
+    else if (e.key === 'Escape') closeDropdown();
+  });
+
+  inputEl.addEventListener('blur', () => setTimeout(closeDropdown, 150));
+  inputEl.addEventListener('focus', () => { if (currentSuggestions.length > 0) render(); });
+}
+setupPlaceAutocomplete('fromText', 'fromSuggestions');
+setupPlaceAutocomplete('toText', 'toSuggestions');
+setupPlaceAutocomplete('shipOrigin', 'shipOriginSuggestions');
+setupPlaceAutocomplete('shipDest', 'shipDestSuggestions');
+
+// Takes [lon,lat] start/end points directly -- works for both the
+// segment-based planner and the free-text search below. Requests OSRM's
+// alternative routes so the user gets a choice of roads, not just one.
+async function fetchRealRoutes(startPt, endPt) {
+  const url = `${OSRM_BASE}/${startPt[0]},${startPt[1]};${endPt[0]},${endPt[1]}?overview=full&geometries=geojson&alternatives=3`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Routing service returned ${res.status}`);
+  const data = await res.json();
+  if (!data.routes || data.routes.length === 0) throw new Error('No real-road route found');
+  return data.routes
+    .map(route => ({
+      coords: route.geometry.coordinates.map(c => [c[1], c[0]]),
+      distanceKm: route.distance / 1000,
+      durationMin: route.duration / 60,
+    }))
+    .sort((a, b) => a.durationMin - b.durationMin);
+}
+
+// Kept for any old call sites -- returns just the fastest option.
+async function fetchRealRoute(startPt, endPt) {
+  const routes = await fetchRealRoutes(startPt, endPt);
+  return routes[0];
+}
+
+// Checks whether the given route passes near any segment this platform
+// monitors, so a free-text search can still surface real risk warnings
+// instead of only working for the predefined corridor list.
+// Returns `n` evenly-spaced points along a polyline's actual length
+// (interpolating between vertices), not just its endpoints -- needed
+// because some monitored segments are long straight lines, and a
+// route can pass close to the MIDDLE of one without being close to
+// either end.
+function sampleAlongLine(coords, n) {
+  if (coords.length <= 1) return coords;
+  if (n <= 1) return [coords[0]];
+  const dists = [0];
+  for (let i = 1; i < coords.length; i++) dists.push(dists[i - 1] + haversineKm(coords[i - 1], coords[i]));
+  const total = dists[dists.length - 1];
+  if (total === 0) return [coords[0]];
+
+  const samples = [];
+  for (let k = 0; k < n; k++) {
+    const target = (k / (n - 1)) * total;
+    let idx = 0;
+    while (idx < dists.length - 2 && dists[idx + 1] < target) idx++;
+    const segStart = coords[idx], segEnd = coords[Math.min(idx + 1, coords.length - 1)];
+    const segLen = dists[Math.min(idx + 1, dists.length - 1)] - dists[idx];
+    const t = segLen > 0 ? (target - dists[idx]) / segLen : 0;
+    samples.push([segStart[0] + (segEnd[0] - segStart[0]) * t, segStart[1] + (segEnd[1] - segStart[1]) * t]);
+  }
+  return samples;
+}
+
+function findNearbyMonitoredSegments(routeCoords, thresholdKm = 5) {
+  if (!segmentsData) return [];
+  const sampled = routeCoords.filter((_, i) => i % 15 === 0); // sample for performance
+  const nearby = [];
+  segmentsData.features.forEach(f => {
+    const segCoords = f.geometry.coordinates.map(c => [c[1], c[0]]);
+    const segSample = sampleAlongLine(segCoords, 6); // whole length, not just the two ends
+    const isNear = sampled.some(routePt => segSample.some(segPt => haversineKm(routePt, segPt) <= thresholdKm));
+    if (isNear) nearby.push({ ...f.properties, coords: segCoords });
+  });
+  return nearby;
+}
+
+// Splits a route into short consecutive stretches and, for each one,
+// finds whichever nearby monitored segment is actually closest to it
+// -- so the route can be colored snippet-by-snippet (like a live
+// traffic layer) instead of one flat color for the whole trip.
+function computeRouteRiskChunks(routeCoords, nearbySegments, chunkPoints = 8, thresholdKm = 3) {
+  const chunks = [];
+  for (let i = 0; i < routeCoords.length - 1; i += chunkPoints) {
+    const chunkCoords = routeCoords.slice(i, Math.min(i + chunkPoints + 1, routeCoords.length));
+    if (chunkCoords.length < 2) continue;
+    const midpoint = chunkCoords[Math.floor(chunkCoords.length / 2)];
+
+    let closestSegment = null, closestDist = Infinity;
+    nearbySegments.forEach(seg => {
+      const samplePts = sampleAlongLine(seg.coords, 6);
+      samplePts.forEach(pt => {
+        const d = haversineKm(midpoint, pt);
+        if (d < closestDist) { closestDist = d; closestSegment = seg; }
+      });
+    });
+
+    const hasData = closestSegment && closestDist <= thresholdKm
+      && closestSegment.risk_score !== null && closestSegment.risk_score !== undefined;
+    chunks.push({
+      coords: chunkCoords,
+      color: getRiskColor(hasData ? closestSegment.risk_score : null, hasData),
+      segment: hasData ? closestSegment : null,
+    });
+  }
+  return chunks;
+}
+
+let customRouteOptions = [];   // last set of alternative routes found
+let customRouteLines = [];     // their map layers
+let routeRiskMarkers = [];     // moderate+ risk icon markers along the selected route
+let selectedRouteIndex = 0;
+
+// Aggregate risk for a route from whichever monitored segments it
+// passes near -- max score wins (one bad stretch makes the whole
+// route risky), and routes with no monitored segments nearby are
+// treated as "no data" (blue) rather than falsely "safe" (green).
+function scoreRouteRisk(nearbySegments) {
+  const scored = nearbySegments.filter(s => s.risk_score !== null && s.risk_score !== undefined);
+  if (scored.length === 0) return { score: null, level: null, hasData: false };
+  let maxScore = 0, level = 'low';
+  scored.forEach(s => {
+    if (s.risk_score > maxScore) { maxScore = s.risk_score; level = s.risk_level || level; }
+  });
+  return { score: maxScore, level, hasData: true };
+}
+
+function renderCustomRouteLines() {
+  customRouteLines.forEach(l => map.removeLayer(l));
+  customRouteLines = [];
+  routeRiskMarkers.forEach(m => map.removeLayer(m));
+  routeRiskMarkers = [];
+
+  if (customRouteOptions[selectedRouteIndex]) {
+    renderFieldReportMarkersForRoute(customRouteOptions[selectedRouteIndex].route.coords);
+  }
+
+  customRouteOptions.forEach((opt, i) => {
+    const isSelected = i === selectedRouteIndex;
+
+    if (isSelected) {
+      const chunks = computeRouteRiskChunks(opt.route.coords, opt.nearbySegments);
+      opt.chunks = chunks; // cached for the snippet breakdown in the results list
+      chunks.forEach(chunk => {
+        const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
+        line.bindPopup(chunk.segment
+          ? `<b>${chunk.segment.name}</b><br/>Risk: <b style="color:${chunk.color}">${chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'}</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
+          : `No risk data for this stretch (unmonitored road)`);
+        customRouteLines.push(line);
+      });
+
+      // Collapse consecutive chunks belonging to the same segment into
+      // one marker at the midpoint of that stretch, for anything
+      // moderate risk or worse.
+      let runStart = null, runSegment = null;
+      const placeMarkerFor = (segment, startChunk, endChunk) => {
+        if (!segment || !['moderate', 'high', 'severe'].includes(segment.risk_level)) return;
+        const icon = riskLevelIcon(segment.risk_level);
+        if (!icon) return;
+        const midChunk = chunks[Math.floor((startChunk + endChunk) / 2)];
+        const midPos = midChunk.coords[Math.floor(midChunk.coords.length / 2)];
+        const marker = L.marker(midPos, { icon }).addTo(map);
+        marker.bindPopup(`<b>${segment.name}</b><br/>Risk: <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})${reasonsHtml(explainRisk(segment))}`);
+        routeRiskMarkers.push(marker);
+      };
+      chunks.forEach((chunk, idx) => {
+        const key = chunk.segment ? chunk.segment.id : null;
+        if (key !== runSegment) {
+          if (runStart !== null) placeMarkerFor(chunks[runStart].segment, runStart, idx - 1);
+          runStart = idx;
+          runSegment = key;
+        }
+      });
+      if (runStart !== null) placeMarkerFor(chunks[runStart].segment, runStart, chunks.length - 1);
+    } else {
+      const line = L.polyline(opt.route.coords, {
+        color: getRiskColor(opt.risk.score, opt.risk.hasData),
+        weight: 4,
+        opacity: 0.35,
+        dashArray: '4,6',
+      }).addTo(map);
+      line.on('click', () => selectCustomRoute(i));
+      customRouteLines.push(line);
+    }
+  });
+}
+
+function selectCustomRoute(i) {
+  selectedRouteIndex = i;
+  currentRouteCoords = customRouteOptions[i].route.coords;
+  renderCustomRouteLines();
+  renderCustomRouteResults();
+  map.fitBounds(L.latLngBounds(customRouteOptions[i].route.coords), { padding: [50, 50] });
+}
+
+function renderCustomRouteResults() {
+  const resultsDiv = document.getElementById('customRouteResults');
+  let html = customRouteOptions.map((opt, i) => {
+    const r = opt.route, risk = opt.risk;
+    const selected = i === selectedRouteIndex;
+    const riskLabel = !risk.hasData ? 'No risk data (unmonitored road)'
+      : `${risk.level.toUpperCase()} risk (score ${risk.score})`;
+    const riskColor = getRiskColor(risk.score, risk.hasData);
+
+    // For the selected route, break down risk stretch-by-stretch instead
+    // of just showing one number for the whole trip.
+    let breakdownHtml = '';
+    if (selected && opt.chunks) {
+      const rows = [];
+      opt.chunks.forEach(chunk => {
+        const key = chunk.segment ? chunk.segment.id : 'none';
+        const prev = rows[rows.length - 1];
+        if (prev && prev.key === key) return; // same stretch continues, don't repeat it
+        rows.push({ key, segment: chunk.segment });
+      });
+      const scoredRows = rows.filter(row => row.segment);
+      if (scoredRows.length > 0) {
+        breakdownHtml = `<div style="margin-top:6px; border-top:1px solid #333; padding-top:6px;">
+          ${scoredRows.map(row => {
+            const c = getRiskColor(row.segment.risk_score, row.segment.risk_score !== null);
+            const reasons = explainRisk(row.segment);
+            return `<div style="font-size:12px; padding:3px 0;">
+              <div style="display:flex; justify-content:space-between;">
+                <span>${row.segment.name}</span>
+                <span style="color:${c}">${row.segment.risk_level ? row.segment.risk_level.toUpperCase() : 'N/A'} (${row.segment.risk_score})</span>
+              </div>
+              ${reasons.length > 0 ? `<div style="color:#999; margin-top:2px;">${reasons[0]}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>`;
+      }
+    }
+
+    return `<div class="route-result" style="cursor:pointer; ${selected ? 'border:1px solid #3b82f6;' : ''}" onclick="selectCustomRoute(${i})">
+      <b>${selected ? '● ' : ''}Option ${i + 1}${i === 0 ? ' (fastest)' : ''}</b> — ${r.distanceKm.toFixed(1)} km · ~${r.durationMin.toFixed(0)} min
+      <div style="color:${riskColor}; margin-top:4px;">${riskLabel}${opt.nearbySegments.length > 0 ? ` · passes ${opt.nearbySegments.length} monitored segment(s)` : ''}</div>
+      ${breakdownHtml}
+    </div>`;
+  }).join('');
+  resultsDiv.innerHTML = html;
+}
+
+async function findCustomRoute() {
+  const fromText = document.getElementById('fromText').value.trim();
+  const toText = document.getElementById('toText').value.trim();
+  const resultsDiv = document.getElementById('customRouteResults');
+
+  if (!fromText || !toText) {
+    resultsDiv.innerHTML = '<div class="status-line">Enter both a start and destination location.</div>';
+    return;
+  }
+
+  resultsDiv.innerHTML = '<div class="status-line">Looking up locations...</div>';
+  document.getElementById('routeShipmentMatches').innerHTML = '';
+  stopRide();
+  customRouteLines.forEach(l => map.removeLayer(l));
+  customRouteLines = [];
+  routeRiskMarkers.forEach(m => map.removeLayer(m));
+  routeRiskMarkers = [];
+  fieldReportMarkers.forEach(m => map.removeLayer(m));
+  fieldReportMarkers = [];
+
+  try {
+    const fromInput = document.getElementById('fromText');
+    const toInput = document.getElementById('toText');
+    const resolvePlace = async (inputEl, text) => {
+      if (inputEl.dataset.lat && inputEl.dataset.lon) {
+        return { lat: parseFloat(inputEl.dataset.lat), lon: parseFloat(inputEl.dataset.lon), label: inputEl.value };
+      }
+      return geocodePlace(text);
+    };
+    const [fromPlace, toPlace] = await Promise.all([resolvePlace(fromInput, fromText), resolvePlace(toInput, toText)]);
+    currentDestinationLatLon = { lat: toPlace.lat, lon: toPlace.lon };
+    resultsDiv.innerHTML = '<div class="status-line">Calculating routes and checking risk along each...</div>';
+    autoFindShipmentMatchesForRoute(fromPlace, toPlace); // runs alongside route calc, doesn't block it
+
+    const routes = await fetchRealRoutes([fromPlace.lon, fromPlace.lat], [toPlace.lon, toPlace.lat]);
+
+    customRouteOptions = routes.map(route => {
+      const nearbySegments = findNearbyMonitoredSegments(route.coords);
+      return { route, nearbySegments, risk: scoreRouteRisk(nearbySegments) };
+    });
+    // Default selection is the fastest option (index 0); the user can
+    // click any option (or its line on the map) to switch to it.
+    selectedRouteIndex = 0;
+    currentRouteCoords = customRouteOptions[selectedRouteIndex].route.coords;
+    renderCustomRouteLines();
+    map.fitBounds(L.latLngBounds(customRouteOptions[selectedRouteIndex].route.coords), { padding: [50, 50] });
+    renderCustomRouteResults();
+
+    document.getElementById('startRideBtn').disabled = false;
+    document.getElementById('simRideBtn').disabled = false;
+  } catch (err) {
+    resultsDiv.innerHTML = `<div class="status-line">${err.message}</div>`;
+  }
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b[0]-a[0]) * Math.PI/180;
+  const dLon = (b[1]-a[1]) * Math.PI/180;
+  const lat1 = a[0] * Math.PI/180, lat2 = b[0] * Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function pulsingDotIcon() {
+  return L.divIcon({
+    className: '',
+    html: `<div class="live-dot"><div class="dot-pulse"></div><div class="dot-core"></div></div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
+// The blue marker below is the SIMULATED position marching along the
+// route -- it is deliberately NOT the green dot, because the green
+// dot is reserved for "where you actually are" (real device GPS),
+// even while a demo ride is simulating.
+function simPositionIcon() {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:16px; height:16px; border-radius:50%; background:#3b82f6; border:2px solid white; box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+}
+
+// Green pulsing dot = your ACTUAL current GPS, always. Used by real
+// rides (where it IS the ride position) and also kept running as an
+// overlay during simulated rides, since the simulated marker walks
+// the route rather than tracking where you really are.
+function updateRealGpsMarker(pos, { pan = false } = {}) {
+  if (!realGpsMarker) {
+    realGpsMarker = L.marker(pos, { icon: pulsingDotIcon() }).addTo(map);
+  } else {
+    realGpsMarker.setLatLng(pos);
+  }
+  if (pan) map.panTo(pos);
+
+  // If location sharing is on, your real GPS IS the shared location.
+  if (isSharingLocation) {
+    lastKnownPos = { lat: pos[0], lon: pos[1] };
+    if (!shareSelfMarker) {
+      shareSelfMarker = L.marker(pos, { icon: pulsingDotIcon() }).addTo(map);
+    } else {
+      shareSelfMarker.setLatLng(pos);
+    }
+    const now = Date.now();
+    if (now - lastSharePostAt > 10000) {
+      lastSharePostAt = now;
+      postDriverLocation(pos[0], pos[1], 'active');
+    }
+  }
+  return pos;
+}
+
+function startRealGpsWatch() {
+  if (realGpsWatchId !== null || !navigator.geolocation) return;
+  realGpsWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      updateRealGpsMarker([position.coords.latitude, position.coords.longitude]);
+    },
+    (err) => { console.warn('GPS watch error:', err.message); },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+}
+
+function stopRealGpsWatch() {
+  if (realGpsWatchId !== null) { navigator.geolocation.clearWatch(realGpsWatchId); realGpsWatchId = null; }
+  if (realGpsMarker) { map.removeLayer(realGpsMarker); realGpsMarker = null; }
+}
+
+function updateRidePanel(pos, mode) {
+  const dest = currentRouteCoords[currentRouteCoords.length - 1];
+  const remainingKm = haversineKm(pos, dest);
+  const etaMin = (remainingKm / 40) * 60;
+
+  document.getElementById('ridePanel').style.display = 'block';
+  document.getElementById('rideEta').textContent = etaMin < 1 ? 'Arrived' : etaMin.toFixed(0);
+  document.getElementById('rideDistance').textContent = remainingKm.toFixed(1);
+  document.getElementById('rideMode').textContent = mode;
+}
+
+function startRealRide() {
+  if (!navigator.geolocation) { alert('Geolocation not supported in this browser.'); return; }
+  if (!window.isSecureContext) {
+    alert('Live GPS needs a secure connection (https, or localhost) -- most browsers block geolocation otherwise. Ask whoever is hosting this to serve it over HTTPS.');
+    return;
+  }
+  stopRide();
+  rideWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const pos = [position.coords.latitude, position.coords.longitude];
+      updateRealGpsMarker(pos, { pan: true });
+      updateRidePanel(pos, '📍 Live GPS tracking (your real device location)');
+    },
+    (err) => { alert(`Could not get your location: ${err.message}. Check that location permission is granted for this site.`); },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+  document.getElementById('stopRideBtn').style.display = 'block';
+  rideActive = true;
+  updateStuckButtonState();
+}
+
+function startSimulatedRide() {
+  if (!currentRouteCoords) return;
+  stopRide();
+  startRealGpsWatch(); // green dot keeps tracking your actual position throughout the demo
+  let i = 0;
+  const stepEvery = 300;
+  simInterval = setInterval(() => {
+    if (i >= currentRouteCoords.length) { stopRide(); return; }
+    const pos = currentRouteCoords[i];
+    if (!rideMarker) {
+      rideMarker = L.marker(pos, { icon: simPositionIcon() }).addTo(map);
+    } else {
+      rideMarker.setLatLng(pos);
+    }
+    map.panTo(pos);
+    updateRidePanel(pos, '▶ Simulated ride (for demo purposes)');
+    i += Math.max(1, Math.floor(currentRouteCoords.length / 200));
+  }, stepEvery);
+  document.getElementById('stopRideBtn').style.display = 'block';
+  rideActive = true;
+  updateStuckButtonState();
+}
+
+function stopRide() {
+  if (rideWatchId !== null) { navigator.geolocation.clearWatch(rideWatchId); rideWatchId = null; }
+  if (simInterval !== null) { clearInterval(simInterval); simInterval = null; }
+  if (rideMarker) { map.removeLayer(rideMarker); rideMarker = null; }
+  // Only drop the real-GPS overlay if we're not also using it for
+  // location sharing -- otherwise stopping a ride would kill your SOS visibility.
+  if (!isSharingLocation) stopRealGpsWatch();
+  document.getElementById('stopRideBtn').style.display = 'none';
+  rideActive = false;
+  updateStuckButtonState();
+  stopNearbyHelpPolling(); // SOS/"Nearby Help" needs an active ride, so its contact list goes stale too
+}
+
+// ============================================================
+// ROLE HANDLING
+// Real login/auth is handled outside this app -- whatever system
+// authenticates the person is expected to land them here with a
+// role already decided (e.g. via ?role=driver in the URL, or by
+// serving a different entry point per role). The picker overlay
+// below is just a stand-in for that during development/demo.
+// ============================================================
+const ROLE_LABELS = { driver: 'Driver', field_reporter: 'Field Reporter', authority: 'Authority / Government' };
+let currentRole = null;
+let authoritySegmentsLayer = null;
+
+function applyRole(role) {
+  if (!ROLE_LABELS[role]) return;
+  stopNearbyHelpPolling();
+  currentRole = role;
+  localStorage.setItem('ner_role', role);
+  document.querySelectorAll('[data-roles]').forEach(el => {
+    const roles = el.dataset.roles.split(',');
+    el.style.display = roles.includes(role) ? '' : 'none';
+  });
+  document.getElementById('roleBadge').textContent = ROLE_LABELS[role];
+  document.getElementById('roleSubtitle').textContent =
+    role === 'authority' ? 'District oversight, verification & alerts'
+    : role === 'field_reporter' ? 'Ground reporting & field coordination'
+    : 'Real-time accessibility & disruption monitoring';
+  document.getElementById('roleOverlay').style.display = 'none';
+
+  if (role === 'authority') {
+    loadDistrictStatus();
+    loadReviewQueue();
+    loadAuthorityAlerts();
+    loadTrips();
+    renderAllSegmentsOnMap();
+  } else if (authoritySegmentsLayer) {
+    map.removeLayer(authoritySegmentsLayer);
+    authoritySegmentsLayer = null;
+  }
+}
+
+function showRoleOverlay() {
+  document.getElementById('roleOverlay').style.display = 'flex';
+}
+
+function getInitialRole() {
+  const urlRole = new URLSearchParams(window.location.search).get('role');
+  if (ROLE_LABELS[urlRole]) return urlRole;
+  const stored = localStorage.getItem('ner_role');
+  if (ROLE_LABELS[stored]) return stored;
+  return null;
+}
+
+const initialRole = getInitialRole();
+if (initialRole) applyRole(initialRole);
+
+// ============================================================
+// AUTHORITY: full network map (drivers/reporters only see risk
+// on their searched route -- an authority user needs the whole
+// picture at once).
+// ============================================================
+function renderAllSegmentsOnMap() {
+  if (!segmentsData) return; // loadSegments() hasn't resolved yet; loadAll() below re-triggers this
+  if (authoritySegmentsLayer) map.removeLayer(authoritySegmentsLayer);
+  authoritySegmentsLayer = L.geoJSON(segmentsData, {
+    style: (feature) => ({
+      color: getRiskColor(feature.properties.risk_score, feature.properties.risk_score !== null),
+      weight: 4,
+      opacity: 0.8,
+    }),
+    onEachFeature: (feature, layer) => {
+      const p = feature.properties;
+      const color = getRiskColor(p.risk_score, p.risk_score !== null);
+      layer.bindPopup(`
+        <b>${p.name}</b><br/>
+        Risk: <b style="color:${color}">${p.risk_level ? p.risk_level.toUpperCase() : 'NOT YET SCORED'}</b>${p.risk_score !== null ? ` (score ${p.risk_score})` : ''}<br/>
+        ${reasonsHtml(explainRisk(p))}
+        Status: ${p.status}${p.active_alerts > 0 ? ` · ${p.active_alerts} active alert(s)` : ''}
+      `);
+    },
+  }).addTo(map);
+}
+
+// ============================================================
+// AUTHORITY: district connectivity dashboard
+// ============================================================
+function districtStatusLabel(status) {
+  return { normal: 'Normal', watch: 'Watch', at_risk: 'At risk', disrupted: 'Disrupted' }[status] || status;
+}
+
+async function loadDistrictStatus() {
+  const listEl = document.getElementById('districtList');
+  try {
+    const res = await fetch(`${API_BASE}/districts/status`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const districts = await res.json();
+    document.getElementById('districtCount').textContent = districts.length;
+    if (districts.length === 0) { listEl.innerHTML = '<div class="status-line">No districts on file.</div>'; return; }
+    listEl.innerHTML = districts.map(d => `
+      <div class="district-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b>${d.name}</b>
+          <span class="connectivity-badge conn-${d.connectivity_status}">${districtStatusLabel(d.connectivity_status)}</span>
+        </div>
+        <div class="status-line">${d.state}${d.is_remote ? ' · remote' : ''} · ${d.total_segments} monitored segment(s)</div>
+        <div class="status-line">${d.blocked_segments} blocked · ${d.restricted_segments} restricted · ${d.active_alerts} active alert(s)</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="status-line">Failed to load district status: ${err.message}</div>`;
+  }
+}
+
+// ============================================================
+// AUTHORITY: field report review queue (verify / reject)
+// ============================================================
+async function loadReviewQueue() {
+  const listEl = document.getElementById('reviewQueueList');
+  try {
+    const res = await fetch(`${API_BASE}/field-reports?limit=30`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const reports = await res.json();
+    if (reports.length === 0) { listEl.innerHTML = '<div class="status-line">No field reports yet.</div>'; return; }
+    listEl.innerHTML = reports.map(r => `
+      <div class="review-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>${FIELD_REPORT_EMOJI[r.report_type] || ''} ${(r.report_type || '').replace(/_/g, ' ')}</span>
+          ${r.verified ? '<span style="color:#22c55e; font-size:12px;">✅ verified</span>' : '<span style="color:#94a3b8; font-size:12px;">pending</span>'}
+        </div>
+        <div class="status-line">${r.description || 'No description'}</div>
+        <div class="status-line">${r.segment_name ? `Near: ${r.segment_name} · ` : ''}By ${r.reporter_name || 'Anonymous'} (${r.reporter_role || 'citizen'}) · ${timeAgo(r.captured_at)}</div>
+        ${r.corroborated_by > 0 ? `<div class="status-line">Corroborated by ${r.corroborated_by} other report(s) · confidence ${r.confidence_score ?? 'n/a'}</div>` : ''}
+        <div class="review-actions">
+          ${!r.verified ? `<button class="btn-verify" onclick="reviewReport('${r.id}', true)">Verify</button>` : ''}
+          <button class="btn-reject" onclick="clearReport('${r.id}')">Clear</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="status-line">Failed to load review queue: ${err.message}</div>`;
+  }
+}
+
+async function reviewReport(reportId, verified) {
+  try {
+    const res = await fetch(`${API_BASE}/field-reports/${reportId}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verified }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    loadReviewQueue();
+    loadFieldReports();
+  } catch (err) {
+    alert(`Could not update report: ${err.message}`);
+  }
+}
+
+// "Clear" removes a report from the active queue (false alarm,
+// duplicate, or already handled) -- separate from "Verify", which
+// records whether the report was accurate. Previously this reused
+// the /verify endpoint with verified:false, which was a no-op since
+// reports already default to unverified, so the button appeared to
+// do nothing.
+async function clearReport(reportId) {
+  try {
+    const res = await fetch(`${API_BASE}/field-reports/${reportId}/resolve`, { method: 'POST' });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    loadReviewQueue();
+    loadFieldReports();
+  } catch (err) {
+    alert(`Could not clear report: ${err.message}`);
+  }
+}
+
+// ============================================================
+// AUTHORITY: alert management (view, resolve, create manual alerts)
+// ============================================================
+function populateAlertSegmentSelect() {
+  const sel = document.getElementById('alertSegmentSelect');
+  if (!segmentsData || sel.dataset.populated === '1') return;
+  segmentsData.features
+    .slice()
+    .sort((a, b) => a.properties.name.localeCompare(b.properties.name))
+    .forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.properties.id;
+      opt.textContent = f.properties.name;
+      sel.appendChild(opt);
+    });
+  sel.dataset.populated = '1';
+}
+
+function toggleCreateAlertForm() {
+  populateAlertSegmentSelect();
+  const form = document.getElementById('createAlertForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitManualAlert() {
+  const segment_id = parseInt(document.getElementById('alertSegmentSelect').value, 10);
+  const alert_type = document.getElementById('alertTypeSelect').value;
+  const severity = document.getElementById('alertSeveritySelect').value;
+  const message = document.getElementById('alertMessage').value.trim();
+  if (!segment_id || !message) { alert('Choose a segment and enter a message.'); return; }
+  try {
+    const res = await fetch(`${API_BASE}/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segment_id, alert_type, severity, message }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    document.getElementById('alertMessage').value = '';
+    document.getElementById('createAlertForm').style.display = 'none';
+    loadAuthorityAlerts();
+    loadAlerts();
+  } catch (err) {
+    alert(`Could not publish alert: ${err.message}`);
+  }
+}
+
+async function resolveAlertAction(alertId) {
+  try {
+    const res = await fetch(`${API_BASE}/alerts/${alertId}/resolve`, { method: 'POST' });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    loadAuthorityAlerts();
+    loadAlerts();
+  } catch (err) {
+    alert(`Could not resolve alert: ${err.message}`);
+  }
+}
+
+async function loadAuthorityAlerts() {
+  const listEl = document.getElementById('authAlertsList');
+  try {
+    const res = await fetch(`${API_BASE}/alerts`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const alerts = await res.json();
+    document.getElementById('authAlertCount').textContent = alerts.length;
+    if (alerts.length === 0) { listEl.innerHTML = '<div class="status-line">No active alerts.</div>'; return; }
+    listEl.innerHTML = alerts.map(a => `
+      <div class="alert-card ${a.severity}">
+        <b>${a.segment_name}</b><br/>
+        <span class="status-line">${a.message}</span><br/>
+        <span class="status-line">${a.alert_type.replace(/_/g, ' ')} · source: ${a.source || 'n/a'}</span><br/>
+        <button class="btn-resolve" onclick="resolveAlertAction(${a.id})">Mark Resolved</button>
+      </div>
+    `).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="status-line">Failed to load alerts: ${err.message}</div>`;
+  }
+}
+
+// ============================================================
+// AUTHORITY: trip / vehicle oversight
+// ============================================================
+async function loadTrips() {
+  const listEl = document.getElementById('tripsList');
+  try {
+    const res = await fetch(`${API_BASE}/trips`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const trips = await res.json();
+    document.getElementById('tripCount').textContent = trips.length;
+    if (trips.length === 0) { listEl.innerHTML = '<div class="status-line">No trips on file.</div>'; return; }
+    listEl.innerHTML = trips.map(t => `
+      <div class="trip-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b>${t.registration_no || 'Unregistered vehicle'}</b>
+          <span class="trip-status trip-${t.status}">${(t.status || '').replace(/_/g, ' ')}</span>
+        </div>
+        <div class="status-line">${(t.cargo_type || 'cargo')} · ${t.vehicle_type || 'n/a'}</div>
+        <div class="status-line">${t.origin_district || '?'} → ${t.dest_district || '?'}</div>
+        ${t.eta ? `<div class="status-line">ETA: ${new Date(t.eta).toLocaleString()}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="status-line">Failed to load trips: ${err.message}</div>`;
+  }
+}
+
+// --- Receiving direct notifications (the other side of the Notify
+// button above) -- each active client polls its own session_id for
+// anything addressed to it. A simple queue in case more than one
+// arrives between polls. ---
+let notifyQueue = [];
+
+function showNextDirectNotification() {
+  const modal = document.getElementById('directNotifyModal');
+  if (notifyQueue.length === 0) { modal.style.display = 'none'; return; }
+  const n = notifyQueue[0];
+  document.getElementById('directNotifyContent').innerHTML = `
+    <b>${n.from_name || 'Someone'}</b> ${n.from_role === 'field_official' ? '👮 Field Official' : '🚚 Driver'}<br/>
+    ${n.message || 'notified you.'}${n.from_phone ? `<br/>📞 ${n.from_phone}` : ''}
+  `;
+  document.getElementById('directNotifyMapBtn').style.display = (n.lat && n.lon) ? 'inline-block' : 'none';
+  modal.style.display = 'block';
+}
+
+function dismissDirectNotify() {
+  notifyQueue.shift();
+  showNextDirectNotification();
+}
+
+function viewDirectNotifyOnMap() {
+  const n = notifyQueue[0];
+  if (!n || !n.lat || !n.lon) return;
+  const marker = L.marker([n.lat, n.lon], { icon: nearbyIcon(n.from_role, 'active') }).addTo(map);
+  marker.bindPopup(`<b>${n.from_name}</b><br/>${n.message || ''}${n.from_phone ? `<br/>📞 ${n.from_phone}` : ''}`).openPopup();
+  map.setView([n.lat, n.lon], 13);
+  dismissDirectNotify();
+}
+
+function chatWithCurrentDirectNotify() {
+  const n = notifyQueue[0];
+  if (!n || !n.from_session_id) return;
+  dismissDirectNotify();
+  openChat(n.from_session_id, n.from_name || 'Someone', n.from_role);
+}
+
+async function checkForDirectNotifications() {
+  try {
+    const res = await fetch(`${API_BASE}/notifications/${driverSessionId}`);
+    if (!res.ok) return;
+    const notifications = await res.json();
+    notifications.forEach(n => {
+      notifyQueue.push(n);
+    });
+    if (notifications.length > 0) showNextDirectNotification();
+  } catch { /* best-effort background polling */ }
+}
+setInterval(checkForDirectNotifications, 8000);
+
+async function loadAll() {
+  await loadSegments();
+  await loadAlerts();
+  await loadFieldReports();
+  if (currentRole === 'authority') {
+    renderAllSegmentsOnMap();
+    loadDistrictStatus();
+    loadReviewQueue();
+    loadAuthorityAlerts();
+    loadTrips();
+  }
+}
+loadAll();
+setInterval(loadAll, 60000);
+
+// ============================================================
+// Chat -- WhatsApp-style direct messages between two sessions
+// (driver <-> field officer <-> authority), plus the shared
+// Inbox / Messages list available to all three roles. Threaded
+// and polled, unlike /notify above which is a one-shot alert.
+// ============================================================
+const QUICK_REPLIES = [
+  "🆘 I need help",
+  "📍 Sharing my location",
+  "✅ I'm safe now",
+  "⏳ On my way",
+  "📞 Please call me",
+  "🚧 Road blocked ahead",
+];
+
+let chatPartner = null; // { session_id, name, role }
+let chatPollId = null;
+let inboxPollId = null;
+let chatNotifyQueue = [];
+let lastNotifiedMessageAt = {}; // other_session_id -> ISO timestamp of the last incoming message we've already popped a toast for
+
+function getChatDisplayName() {
+  const input = document.getElementById('chatDisplayName');
+  const typed = input && input.value.trim();
+  if (typed) return typed;
+  const stored = localStorage.getItem('ner_chat_name');
+  if (stored) return stored;
+  const driverNameEl = document.getElementById('driverName');
+  const shared = driverNameEl && driverNameEl.value.trim();
+  return shared || 'Someone';
+}
+
+function saveChatDisplayName() {
+  const v = document.getElementById('chatDisplayName').value.trim();
+  if (v) localStorage.setItem('ner_chat_name', v);
+}
+
+function myChatRole() {
+  if (currentRole === 'authority') return 'authority';
+  const roleSelect = document.getElementById('driverRole');
+  return (roleSelect && roleSelect.value) || 'driver';
+}
+
+function roleLabel(role) {
+  return role === 'field_official' ? 'Field Official'
+    : role === 'authority' ? 'Authority / Government'
+    : 'Driver';
+}
+
+function openChat(sessionId, name, role) {
+  if (!sessionId) return;
+  map.closePopup();
+  chatPartner = { session_id: sessionId, name: name || 'Unknown', role };
+  document.getElementById('chatPartnerName').textContent = chatPartner.name;
+  document.getElementById('chatPartnerRole').textContent = roleLabel(role);
+  document.getElementById('chatModal').style.display = 'flex';
+  renderQuickReplies();
+  loadChatThread();
+  if (chatPollId) clearInterval(chatPollId);
+  chatPollId = setInterval(loadChatThread, 5000);
+  // Pre-fill the display name box from whatever's already known, so
+  // the first-time authority user isn't sending as "Someone".
+  const nameInput = document.getElementById('chatDisplayName');
+  if (nameInput && !nameInput.value.trim()) {
+    const known = localStorage.getItem('ner_chat_name') || (document.getElementById('driverName') || {}).value;
+    if (known) nameInput.value = known;
+  }
+}
+
+function closeChat() {
+  document.getElementById('chatModal').style.display = 'none';
+  if (chatPollId) { clearInterval(chatPollId); chatPollId = null; }
+  chatPartner = null;
+  loadInbox();
+}
+
+function renderQuickReplies() {
+  const wrap = document.getElementById('chatQuickReplies');
+  wrap.innerHTML = '';
+  QUICK_REPLIES.forEach(q => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-reply-chip';
+    btn.textContent = q;
+    btn.addEventListener('click', () => sendChatMessage(q));
+    wrap.appendChild(btn);
+  });
+}
+
+function chatBubbleHtml(m) {
+  const mine = m.from_session_id === driverSessionId;
+  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  return `<div class="chat-bubble ${mine ? 'mine' : 'theirs'}">${m.message}<span class="chat-time">${time}</span></div>`;
+}
+
+async function loadChatThread() {
+  if (!chatPartner) return;
+  try {
+    const res = await fetch(`${API_BASE}/chat/thread?session_id=${driverSessionId}&with_session_id=${chatPartner.session_id}`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const messages = await res.json();
+    const threadDiv = document.getElementById('chatThread');
+    const wasAtBottom = threadDiv.scrollHeight - threadDiv.scrollTop - threadDiv.clientHeight < 40;
+    threadDiv.innerHTML = messages.length === 0
+      ? '<div class="status-line">No messages yet -- say hello, or use a quick reply below.</div>'
+      : messages.map(chatBubbleHtml).join('');
+    if (wasAtBottom) threadDiv.scrollTop = threadDiv.scrollHeight;
+  } catch { /* silent -- best-effort background polling */ }
+}
+
+async function sendChatMessage(text) {
+  if (!chatPartner || !text || !text.trim()) return;
+  const name = getChatDisplayName();
+  try {
+    const res = await fetch(`${API_BASE}/chat/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from_session_id: driverSessionId,
+        from_name: name,
+        from_role: myChatRole(),
+        to_session_id: chatPartner.session_id,
+        to_name: chatPartner.name,
+        message: text.trim(),
+      }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    await loadChatThread();
+  } catch (err) {
+    alert(`Could not send message: ${err.message}`);
+  }
+}
+
+function sendChatFromInput() {
+  const input = document.getElementById('chatInput');
+  const text = input.value;
+  if (!text.trim()) return;
+  input.value = '';
+  sendChatMessage(text);
+}
+
+function inboxCardHtml(c) {
+  const safeName = (c.other_name || 'Unknown').replace(/'/g, "\\'");
+  const emoji = c.other_role === 'field_official' ? '👮' : c.other_role === 'authority' ? '🏛️' : c.other_role === 'driver' ? '🚚' : '💬';
+  return `
+    <div class="inbox-card" onclick="openChat('${c.other_session_id}', '${safeName}', '${c.other_role || ''}')">
+      <div>
+        <b>${emoji} ${c.other_name || 'Unknown'}</b>
+        <div class="inbox-preview">${(c.last_message || '').replace(/</g, '&lt;')}</div>
+      </div>
+      ${c.unread_count > 0 ? `<span class="inbox-unread-badge">${c.unread_count}</span>` : ''}
+    </div>
+  `;
+}
+
+async function loadInbox() {
+  const listDiv = document.getElementById('inboxList');
+  if (!listDiv) return;
+  try {
+    const res = await fetch(`${API_BASE}/chat/inbox?session_id=${driverSessionId}`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const convos = await res.json();
+    const totalUnread = convos.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+    document.getElementById('inboxUnreadBadge').innerHTML = totalUnread > 0
+      ? `<span class="inbox-unread-badge">${totalUnread}</span>` : '';
+    listDiv.innerHTML = convos.length === 0
+      ? '<div class="status-line">No conversations yet.</div>'
+      : convos.map(inboxCardHtml).join('');
+    detectNewChatMessages(convos);
+  } catch (err) {
+    listDiv.innerHTML = `<div class="status-line">${err.message}</div>`;
+  }
+}
+
+// Pops the top-right "New message" toast the first time we see an
+// unread message from someone -- tracked per-partner by timestamp
+// so the same message never re-triggers it on the next poll, and
+// skipped for whoever's chat panel is already open (they're already
+// looking at it, and opening the thread marks it read anyway).
+function detectNewChatMessages(convos) {
+  convos.forEach(c => {
+    if (c.unread_count <= 0 || !c.last_message_at) return;
+    if (lastNotifiedMessageAt[c.other_session_id] === c.last_message_at) return;
+    lastNotifiedMessageAt[c.other_session_id] = c.last_message_at;
+    if (chatPartner && chatPartner.session_id === c.other_session_id) return;
+    chatNotifyQueue.push(c);
+  });
+  if (chatNotifyQueue.length > 0) showNextChatMessageNotify();
+}
+
+function showNextChatMessageNotify() {
+  const modal = document.getElementById('chatMessageNotifyModal');
+  if (chatNotifyQueue.length === 0) { modal.style.display = 'none'; return; }
+  const n = chatNotifyQueue[0];
+  const emoji = n.other_role === 'field_official' ? '👮' : n.other_role === 'authority' ? '🏛️' : n.other_role === 'driver' ? '🚚' : '💬';
+  document.getElementById('chatMessageNotifyContent').innerHTML = `
+    <b>${emoji} ${n.other_name || 'Someone'}</b><br/>
+    ${(n.last_message || '').replace(/</g, '&lt;').slice(0, 120)}
+  `;
+  modal.style.display = 'block';
+}
+
+function dismissChatMessageNotify() {
+  chatNotifyQueue.shift();
+  showNextChatMessageNotify();
+}
+
+function openChatFromNotify() {
+  const n = chatNotifyQueue[0];
+  if (!n) return;
+  chatNotifyQueue.shift();
+  document.getElementById('chatMessageNotifyModal').style.display = 'none';
+  openChat(n.other_session_id, n.other_name, n.other_role);
+}
+
+// Restore a remembered display name into the box on load.
+document.addEventListener('DOMContentLoaded', () => {
+  const nameInput = document.getElementById('chatDisplayName');
+  const stored = localStorage.getItem('ner_chat_name');
+  if (nameInput && stored) nameInput.value = stored;
+});
+
+loadInbox();
+if (inboxPollId) clearInterval(inboxPollId);
+inboxPollId = setInterval(loadInbox, 10000);
+</script>
+
+</body>
+</html>

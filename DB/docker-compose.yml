@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: ner_logistics_db
+    environment:
+      POSTGRES_DB: ner_logistics
+      POSTGRES_USER: ner_admin
+      POSTGRES_PASSWORD: ner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ner_pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/1_schema.sql
+      - ./seed_data.sql:/docker-entrypoint-initdb.d/2_seed_data.sql
+      - ./migration_003_ai_dashcam.sql:/docker-entrypoint-initdb.d/3_ai_dashcam.sql
+
+volumes:
+  ner_pgdata:

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NER Logistics Accessibility Intelligence Platform</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --risk-low: #22c55e;
+    --risk-moderate: #eab308;
+    --risk-high: #f97316;
+    --risk-severe: #dc2626;
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .layout { display: grid; grid-template-columns: 340px 1fr; height: 100vh; }
+  .sidebar { background: var(--panel); padding: 16px; overflow-y: auto; border-right: 1px solid #334155; }
+  .sidebar h1 { font-size: 16px; margin: 0 0 4px; }
+  .sidebar .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  #map { height: 100vh; }
+  .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 20px 0 8px; }
+  .segment-card, .alert-card { background: #263449; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+  .segment-card:hover, .alert-card:hover { background: #2d3d56; }
+  .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #0f172a; }
+  .risk-low { background: var(--risk-low); }
+  .risk-moderate { background: var(--risk-moderate); }
+  .risk-high { background: var(--risk-high); }
+  .risk-severe { background: var(--risk-severe); }
+  .alert-card { border-left: 3px solid var(--risk-severe); }
+  .alert-card.warning { border-left-color: var(--risk-high); }
+  .route-form { display: flex; gap: 6px; margin-bottom: 10px; }
+  .route-form select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 12px; }
+  .text-input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 13px; margin-bottom: 6px; }
+  .text-input::placeholder { color: #64748b; }
+  .btn { width: 100%; padding: 8px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; margin-top: 6px; font-size: 13px; }
+  .btn-primary { background: #3b82f6; color: white; }
+  .btn-ride { background: #22c55e; color: #0f172a; }
+  .btn-sim { background: #a855f7; color: white; }
+  .btn-stop { background: #dc2626; color: white; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .route-result { font-size: 12px; background: #263449; border-radius: 8px; padding: 10px; margin-top: 8px; }
+  .legend { position: absolute; bottom: 20px; left: 360px; background: var(--panel); padding: 10px 14px; border-radius: 8px; font-size: 12px; z-index: 500; }
+  .legend span { display: inline-flex; align-items: center; margin-right: 12px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; display: inline-block; }
+  .status-line { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .error-banner { background: #dc2626; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; display: none; }
+  .ride-panel { background: #1a2b1a; border: 1px solid #22c55e; border-radius: 8px; padding: 10px; margin-top: 8px; display: none; }
+  .ride-panel .big { font-size: 22px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+    <h1>🛣️ NER Logistics Intelligence</h1>
+    <div class="subtitle">Real-time accessibility &amp; disruption monitoring</div>
+
+    <div id="errorBanner" class="error-banner"></div>
+
+    <div class="section-title">Search a Route (any location)</div>
+    <input id="fromText" type="text" placeholder="From (e.g. Dimapur, Nagaland)" class="text-input" />
+    <input id="toText" type="text" placeholder="To (e.g. Kohima, Nagaland)" class="text-input" />
+    <button class="btn btn-primary" onclick="findCustomRoute()">Find Route</button>
+    <div id="customRouteResults"></div>
+
+    <div class="section-title">Or Pick From Monitored Segments</div>
+    <div class="route-form">
+      <select id="fromSelect"></select>
+      <select id="toSelect"></select>
+    </div>
+    <button class="btn btn-primary" onclick="computeRoute()">Compare Routes</button>
+    <div id="routeResults"></div>
+
+    <button class="btn btn-ride" id="startRideBtn" onclick="startRealRide()" disabled>📍 Start Ride (Live GPS)</button>
+    <button class="btn btn-sim" id="simRideBtn" onclick="startSimulatedRide()" disabled>▶ Simulate Ride (Demo)</button>
+    <button class="btn btn-stop" id="stopRideBtn" onclick="stopRide()" style="display:none;">⏹ Stop</button>
+
+    <div id="ridePanel" class="ride-panel">
+      <div class="big" id="rideEta">--</div>
+      <div class="status-line">min remaining · <span id="rideDistance">--</span> km left</div>
+      <div class="status-line" id="rideMode">—</div>
+    </div>
+
+    <div class="section-title">Active Alerts (<span id="alertCount">0</span>)</div>
+    <div id="alertsList"><div class="status-line">Loading...</div></div>
+
+    <div class="section-title">Road Segments</div>
+    <div id="segmentsList"><div class="status-line">Loading...</div></div>
+  </div>
+
+  <div style="position: relative;">
+    <div id="map"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:#3b82f6"></span>No data</span>
+      <span style="display:inline-flex; align-items:center;">
+        <span style="width:120px; height:10px; border-radius:5px; margin-right:6px; display:inline-block;
+          background:linear-gradient(90deg, #22c55e 0%, #eab308 35%, #f97316 65%, #dc2626 100%);"></span>
+        Low risk &rarr; Severe
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = "http://localhost:8000";
+const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
+
+const riskColors = { low: "#22c55e", moderate: "#eab308", high: "#f97316", severe: "#dc2626" };
+
+// Continuous risk gradient for map lines, like a live-traffic layer:
+// no data -> blue, then green -> yellow -> orange -> red as risk_score climbs.
+// Stops are (score, [r,g,b]); colors are linearly interpolated between them.
+const RISK_GRADIENT_STOPS = [
+  [0,   [59, 130, 246]],  // blue   -- unmonitored / no risk data yet
+  [1,   [34, 197, 94]],   // green  -- low
+  [35,  [234, 179, 8]],   // yellow -- moderate
+  [65,  [249, 115, 22]],  // orange -- high
+  [100, [220, 38, 38]],   // red    -- severe
+];
+function getRiskColor(score, hasData = true) {
+  if (!hasData || score === null || score === undefined) return "#3b82f6"; // blue = no data
+  const s = Math.max(0, Math.min(100, score));
+  for (let i = 0; i < RISK_GRADIENT_STOPS.length - 1; i++) {
+    const [s0, c0] = RISK_GRADIENT_STOPS[i];
+    const [s1, c1] = RISK_GRADIENT_STOPS[i + 1];
+    if (s >= s0 && s <= s1) {
+      const t = s1 === s0 ? 0 : (s - s0) / (s1 - s0);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return "#dc2626";
+}
+
+const map = L.map('map').setView([25.75, 93.95], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 18
+}).addTo(map);
+
+let segmentsData = null;
+let segmentLayers = {};
+let currentRouteCoords = null;
+let currentRouteLine = null;
+let rideMarker = null;
+let rideWatchId = null;
+let simInterval = null;
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function loadSegments() {
+  try {
+    const res = await fetch(`${API_BASE}/segments`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    segmentsData = await res.json();
+    renderSegmentsOnMap(segmentsData);
+    renderSegmentsList(segmentsData);
+    populateRouteSelectors(segmentsData);
+    document.getElementById('errorBanner').style.display = 'none';
+  } catch (err) {
+    showError(`Could not reach the API at ${API_BASE}. Is it running? (${err.message})`);
+  }
+}
+
+function renderSegmentsOnMap(geojson) {
+  Object.values(segmentLayers).forEach(l => map.removeLayer(l));
+  segmentLayers = {};
+  geojson.features.forEach(feature => {
+    const color = getRiskColor(feature.properties.risk_score, feature.properties.risk_score !== null);
+    const layer = L.geoJSON(feature, { style: { color, weight: 5, opacity: 0.6, dashArray: '2,8' } }).addTo(map);
+    layer.bindPopup(`
+      <b>${feature.properties.name}</b><br/>
+      Risk: <b style="color:${color}">${feature.properties.risk_level ? feature.properties.risk_level.toUpperCase() : 'NOT YET SCORED'}</b>${feature.properties.risk_score !== null ? ` (score ${feature.properties.risk_score})` : ''}<br/>
+      Status: ${feature.properties.status}<br/>
+      ${feature.properties.seasonal_restriction ? `⚠ ${feature.properties.seasonal_restriction}<br/>` : ''}
+      ${feature.properties.active_alerts > 0 ? `<span style="color:#dc2626">🔔 ${feature.properties.active_alerts} active alert(s)</span>` : ''}
+      <div style="font-size:11px; color:#888; margin-top:4px;">Dashed line = straight reference only, not the real road</div>
+    `);
+    segmentLayers[feature.properties.id] = layer;
+  });
+  const allLayers = Object.values(segmentLayers);
+  if (allLayers.length > 0) map.fitBounds(L.featureGroup(allLayers).getBounds(), { padding: [30, 30] });
+}
+
+function renderSegmentsList(geojson) {
+  const container = document.getElementById('segmentsList');
+  container.innerHTML = '';
+  geojson.features.forEach(f => {
+    const p = f.properties;
+    const div = document.createElement('div');
+    div.className = 'segment-card';
+    div.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span>${p.name}</span><span class="risk-badge risk-${p.risk_level || 'low'}" style="${!p.risk_level ? 'background:#3b82f6;color:white;' : ''}">${p.risk_level || 'unscored'}</span>
+      </div>
+      <div class="status-line">${p.risk_score !== null ? `Score ${p.risk_score}` : 'No risk data yet'} · ${p.status}</div>`;
+    div.onclick = () => {
+      const layer = segmentLayers[p.id];
+      if (layer) { map.fitBounds(layer.getBounds(), { padding: [50, 50] }); layer.openPopup(); }
+    };
+    container.appendChild(div);
+  });
+}
+
+function populateRouteSelectors(geojson) {
+  const fromSel = document.getElementById('fromSelect');
+  const toSel = document.getElementById('toSelect');
+  fromSel.innerHTML = ''; toSel.innerHTML = '';
+  geojson.features.sort((a, b) => a.properties.id - b.properties.id).forEach(f => {
+    const opt1 = document.createElement('option');
+    opt1.value = f.properties.id;
+    opt1.textContent = f.properties.name;
+    fromSel.appendChild(opt1);
+    toSel.appendChild(opt1.cloneNode(true));
+  });
+  if (toSel.options.length > 1) toSel.selectedIndex = toSel.options.length - 1;
+}
+
+async function loadAlerts() {
+  try {
+    const res = await fetch(`${API_BASE}/alerts`);
+    const alerts = await res.json();
+    document.getElementById('alertCount').textContent = alerts.length;
+    const container = document.getElementById('alertsList');
+    if (alerts.length === 0) { container.innerHTML = '<div class="status-line">No active alerts.</div>'; return; }
+    container.innerHTML = '';
+    alerts.forEach(a => {
+      const div = document.createElement('div');
+      div.className = `alert-card ${a.severity}`;
+      div.innerHTML = `<b>${a.segment_name}</b><br/><span class="status-line">${a.message}</span>`;
+      div.onclick = () => {
+        const layer = segmentLayers[a.segment_id];
+        if (layer) { map.fitBounds(layer.getBounds(), { padding: [50, 50] }); layer.openPopup(); }
+      };
+      container.appendChild(div);
+    });
+  } catch (err) {
+    document.getElementById('alertsList').innerHTML = '<div class="status-line">Failed to load alerts.</div>';
+  }
+}
+
+function segmentEndpoints(segId) {
+  const feature = segmentsData.features.find(f => f.properties.id == segId);
+  if (!feature) return null;
+  const coords = feature.geometry.coordinates;
+  return { start: coords[0], end: coords[coords.length - 1] };
+}
+
+// Free geocoding via OpenStreetMap's Nominatim service (no API key needed).
+// Biases toward the North East India region so short place names like
+// "Kohima" resolve correctly instead of matching a same-named place elsewhere.
+async function geocodePlace(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Geocoding service returned ${res.status}`);
+  const results = await res.json();
+  if (results.length === 0) throw new Error(`Could not find location: "${query}"`);
+  return { lon: parseFloat(results[0].lon), lat: parseFloat(results[0].lat), label: results[0].display_name };
+}
+
+// Takes [lon,lat] start/end points directly -- works for both the
+// segment-based planner and the free-text search below. Requests OSRM's
+// alternative routes so the user gets a choice of roads, not just one.
+async function fetchRealRoutes(startPt, endPt) {
+  const url = `${OSRM_BASE}/${startPt[0]},${startPt[1]};${endPt[0]},${endPt[1]}?overview=full&geometries=geojson&alternatives=3`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Routing service returned ${res.status}`);
+  const data = await res.json();
+  if (!data.routes || data.routes.length === 0) throw new Error('No real-road route found');
+  return data.routes
+    .map(route => ({
+      coords: route.geometry.coordinates.map(c => [c[1], c[0]]),
+      distanceKm: route.distance / 1000,
+      durationMin: route.duration / 60,
+    }))
+    .sort((a, b) => a.durationMin - b.durationMin);
+}
+
+// Kept for any old call sites -- returns just the fastest option.
+async function fetchRealRoute(startPt, endPt) {
+  const routes = await fetchRealRoutes(startPt, endPt);
+  return routes[0];
+}
+
+// Checks whether the given route passes near any segment this platform
+// monitors, so a free-text search can still surface real risk warnings
+// instead of only working for the predefined corridor list.
+function findNearbyMonitoredSegments(routeCoords, thresholdKm = 5) {
+  if (!segmentsData) return [];
+  const sampled = routeCoords.filter((_, i) => i % 15 === 0); // sample for performance
+  const nearby = [];
+  segmentsData.features.forEach(f => {
+    const segCoords = f.geometry.coordinates.map(c => [c[1], c[0]]);
+    const segSample = [segCoords[0], segCoords[segCoords.length - 1]];
+    const isNear = sampled.some(routePt => segSample.some(segPt => haversineKm(routePt, segPt) <= thresholdKm));
+    if (isNear) nearby.push(f.properties);
+  });
+  return nearby;
+}
+
+let customRouteOptions = [];   // last set of alternative routes found
+let customRouteLines = [];     // their map layers
+let selectedRouteIndex = 0;
+
+// Aggregate risk for a route from whichever monitored segments it
+// passes near -- max score wins (one bad stretch makes the whole
+// route risky), and routes with no monitored segments nearby are
+// treated as "no data" (blue) rather than falsely "safe" (green).
+function scoreRouteRisk(nearbySegments) {
+  const scored = nearbySegments.filter(s => s.risk_score !== null && s.risk_score !== undefined);
+  if (scored.length === 0) return { score: null, level: null, hasData: false };
+  let maxScore = 0, level = 'low';
+  scored.forEach(s => {
+    if (s.risk_score > maxScore) { maxScore = s.risk_score; level = s.risk_level || level; }
+  });
+  return { score: maxScore, level, hasData: true };
+}
+
+function renderCustomRouteLines() {
+  customRouteLines.forEach(l => map.removeLayer(l));
+  customRouteLines = customRouteOptions.map((opt, i) => {
+    const isSelected = i === selectedRouteIndex;
+    const line = L.polyline(opt.route.coords, {
+      color: getRiskColor(opt.risk.score, opt.risk.hasData),
+      weight: isSelected ? 6 : 4,
+      opacity: isSelected ? 0.95 : 0.35,
+      dashArray: isSelected ? null : '4,6',
+    }).addTo(map);
+    line.on('click', () => selectCustomRoute(i));
+    return line;
+  });
+}
+
+function selectCustomRoute(i) {
+  selectedRouteIndex = i;
+  currentRouteCoords = customRouteOptions[i].route.coords;
+  renderCustomRouteLines();
+  renderCustomRouteResults();
+  map.fitBounds(customRouteLines[i].getBounds(), { padding: [50, 50] });
+}
+
+function renderCustomRouteResults() {
+  const resultsDiv = document.getElementById('customRouteResults');
+  let html = customRouteOptions.map((opt, i) => {
+    const r = opt.route, risk = opt.risk;
+    const selected = i === selectedRouteIndex;
+    const riskLabel = !risk.hasData ? 'No risk data (unmonitored road)'
+      : `${risk.level.toUpperCase()} risk (score ${risk.score})`;
+    const riskColor = getRiskColor(risk.score, risk.hasData);
+    return `<div class="route-result" style="cursor:pointer; ${selected ? 'border:1px solid #3b82f6;' : ''}" onclick="selectCustomRoute(${i})">
+      <b>${selected ? '● ' : ''}Option ${i + 1}${i === 0 ? ' (fastest)' : ''}</b> — ${r.distanceKm.toFixed(1)} km · ~${r.durationMin.toFixed(0)} min
+      <div style="color:${riskColor}; margin-top:4px;">${riskLabel}${opt.nearbySegments.length > 0 ? ` · passes ${opt.nearbySegments.length} monitored segment(s)` : ''}</div>
+    </div>`;
+  }).join('');
+  resultsDiv.innerHTML = html;
+}
+
+async function findCustomRoute() {
+  const fromText = document.getElementById('fromText').value.trim();
+  const toText = document.getElementById('toText').value.trim();
+  const resultsDiv = document.getElementById('customRouteResults');
+
+  if (!fromText || !toText) {
+    resultsDiv.innerHTML = '<div class="status-line">Enter both a start and destination location.</div>';
+    return;
+  }
+
+  resultsDiv.innerHTML = '<div class="status-line">Looking up locations...</div>';
+  stopRide();
+  customRouteLines.forEach(l => map.removeLayer(l));
+  customRouteLines = [];
+
+  try {
+    const [fromPlace, toPlace] = await Promise.all([geocodePlace(fromText), geocodePlace(toText)]);
+    resultsDiv.innerHTML = '<div class="status-line">Calculating routes and checking risk along each...</div>';
+
+    const routes = await fetchRealRoutes([fromPlace.lon, fromPlace.lat], [toPlace.lon, toPlace.lat]);
+
+    customRouteOptions = routes.map(route => {
+      const nearbySegments = findNearbyMonitoredSegments(route.coords);
+      return { route, nearbySegments, risk: scoreRouteRisk(nearbySegments) };
+    });
+    // Default selection is the fastest option (index 0); the user can
+    // click any option (or its line on the map) to switch to it.
+    selectedRouteIndex = 0;
+    currentRouteCoords = customRouteOptions[selectedRouteIndex].route.coords;
+    renderCustomRouteLines();
+    map.fitBounds(customRouteLines[selectedRouteIndex].getBounds(), { padding: [50, 50] });
+    renderCustomRouteResults();
+
+    document.getElementById('startRideBtn').disabled = false;
+    document.getElementById('simRideBtn').disabled = false;
+  } catch (err) {
+    resultsDiv.innerHTML = `<div class="status-line">${err.message}</div>`;
+  }
+}
+
+async function computeRoute() {
+  const start = document.getElementById('fromSelect').value;
+  const end = document.getElementById('toSelect').value;
+  const resultsDiv = document.getElementById('routeResults');
+  resultsDiv.innerHTML = '<div class="status-line">Calculating...</div>';
+  stopRide();
+
+  try {
+    const res = await fetch(`${API_BASE}/route?start=${start}&end=${end}`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const data = await res.json();
+
+    const renderRoute = (label, route) => {
+      if (!route || route.total_time_min === null) {
+        return `<div class="route-result"><b>${label}</b>: No route available (blocked/severe risk)</div>`;
+      }
+      const warn = route.segments.filter(s => s.risk_level === 'high' || s.risk_level === 'severe');
+      return `<div class="route-result"><b>${label}</b> — ${route.total_time_min} min
+        ${warn.length > 0 ? `<div style="color:var(--risk-severe); margin-top:4px;">⚠ ${warn.map(w => w.name).join(', ')}</div>` : ''}
+      </div>`;
+    };
+    let html = renderRoute('Fastest Route (risk model)', data.fastest) + renderRoute('Safest Route (risk model)', data.safest);
+
+    const startPt = segmentEndpoints(start).start;
+    const endPt = segmentEndpoints(end).end;
+    const realRoute = await fetchRealRoute(startPt, endPt);
+    currentRouteCoords = realRoute.coords;
+
+    if (currentRouteLine) map.removeLayer(currentRouteLine);
+    currentRouteLine = L.polyline(currentRouteCoords, { color: '#3b82f6', weight: 5, opacity: 0.9 }).addTo(map);
+    map.fitBounds(currentRouteLine.getBounds(), { padding: [50, 50] });
+
+    html += `<div class="route-result">Real road distance: ${realRoute.distanceKm.toFixed(1)} km · ~${realRoute.durationMin.toFixed(0)} min driving</div>`;
+    resultsDiv.innerHTML = html;
+
+    document.getElementById('startRideBtn').disabled = false;
+    document.getElementById('simRideBtn').disabled = false;
+  } catch (err) {
+    resultsDiv.innerHTML = `<div class="status-line">Could not compute route: ${err.message}</div>`;
+  }
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b[0]-a[0]) * Math.PI/180;
+  const dLon = (b[1]-a[1]) * Math.PI/180;
+  const lat1 = a[0] * Math.PI/180, lat2 = b[0] * Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function updateRideMarker(pos, mode) {
+  if (!rideMarker) {
+    rideMarker = L.circleMarker(pos, { radius: 8, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 1 }).addTo(map);
+  } else {
+    rideMarker.setLatLng(pos);
+  }
+  map.panTo(pos);
+
+  const dest = currentRouteCoords[currentRouteCoords.length - 1];
+  const remainingKm = haversineKm(pos, dest);
+  const etaMin = (remainingKm / 40) * 60;
+
+  document.getElementById('ridePanel').style.display = 'block';
+  document.getElementById('rideEta').textContent = etaMin < 1 ? 'Arrived' : etaMin.toFixed(0);
+  document.getElementById('rideDistance').textContent = remainingKm.toFixed(1);
+  document.getElementById('rideMode').textContent = mode;
+}
+
+function startRealRide() {
+  if (!navigator.geolocation) { alert('Geolocation not supported in this browser.'); return; }
+  stopRide();
+  rideWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const pos = [position.coords.latitude, position.coords.longitude];
+      updateRideMarker(pos, '📍 Live GPS tracking (your real device location)');
+    },
+    (err) => { alert(`Could not get your location: ${err.message}`); },
+    { enableHighAccuracy: true, maximumAge: 5000 }
+  );
+  document.getElementById('stopRideBtn').style.display = 'block';
+}
+
+function startSimulatedRide() {
+  if (!currentRouteCoords) return;
+  stopRide();
+  let i = 0;
+  const stepEvery = 300;
+  simInterval = setInterval(() => {
+    if (i >= currentRouteCoords.length) { stopRide(); return; }
+    updateRideMarker(currentRouteCoords[i], '▶ Simulated ride (for demo purposes)');
+    i += Math.max(1, Math.floor(currentRouteCoords.length / 200));
+  }, stepEvery);
+  document.getElementById('stopRideBtn').style.display = 'block';
+}
+
+function stopRide() {
+  if (rideWatchId !== null) { navigator.geolocation.clearWatch(rideWatchId); rideWatchId = null; }
+  if (simInterval !== null) { clearInterval(simInterval); simInterval = null; }
+  document.getElementById('stopRideBtn').style.display = 'none';
+}
+
+async function loadAll() { await loadSegments(); await loadAlerts(); }
+loadAll();
+setInterval(loadAll, 60000);
+</script>
+
+</body>
+</html>
