@@ -53,16 +53,31 @@ export function AuthProvider({ children }) {
   const [name, setName] = useState(() => localStorage.getItem('ner_name') || '');
   const [phone, setPhone] = useState(() => localStorage.getItem('ner_phone') || '');
 
-  // Stable per-browser-session id, used so a driver's own marker can
-  // be excluded from "who's nearby" queries.
-  const [sessionId] = useState(() => {
-    let id = localStorage.getItem('ner_session_id');
+  // Chat/live-location/notifications/shipment-board all key off this id
+  // server-side (see api/db.py), so it has to identify the ACCOUNT, not
+  // the browser -- otherwise logging into the same account from a second
+  // browser/device looks like a brand-new person with no history.
+  //
+  // Every account has a unique phone number (accounts.phone, enforced
+  // in db.create_account), so it's a stable, always-available id to
+  // derive session_id from -- no separate id needs to come back from
+  // the login/register response. Prefixed so it can never collide with
+  // a leftover random UUID from before this change.
+  //
+  // Before login there's no phone yet, so fall back to a random
+  // per-browser id (same as before) purely so nothing reading
+  // sessionId pre-auth breaks; every real feature that uses sessionId
+  // only renders after login (see App.jsx), by which point `phone` is
+  // set and this recomputes to the account-derived id.
+  const [anonId] = useState(() => {
+    let id = localStorage.getItem('ner_anon_id');
     if (!id) {
       id = crypto.randomUUID();
-      localStorage.setItem('ner_session_id', id);
+      localStorage.setItem('ner_anon_id', id);
     }
     return id;
   });
+  const sessionId = useMemo(() => (phone ? `acct:${phone}` : anonId), [phone, anonId]);
 
   useEffect(() => {
     localStorage.setItem('ner_name', name);
