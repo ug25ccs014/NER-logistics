@@ -11,7 +11,6 @@ function getToken() {
 }
 
 async function request(path, options = {}) {
-<<<<<<< HEAD
   const token = getToken();
   let res;
   try {
@@ -40,16 +39,18 @@ async function request(path, options = {}) {
 // setting it manually breaks the upload with a confusing 422.
 async function uploadRequest(path, formData) {
   const token = getToken();
-=======
-  const token = localStorage.getItem(TOKEN_KEY);
->>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...options,
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
+  }
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { /* not JSON */ }
