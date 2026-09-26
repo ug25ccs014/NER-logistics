@@ -52,19 +52,14 @@ function readAuthField(key) {
 }
 
 export function AuthProvider({ children }) {
-<<<<<<< HEAD
   const [token, setTokenState] = useState(
     () => localStorage.getItem('ner_token') || sessionStorage.getItem('ner_token')
   );
-=======
-  const [token, setTokenState] = useState(() => localStorage.getItem('ner_token') || sessionStorage.getItem('ner_token'));
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('ner_remember_me') === 'true');
->>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
   const [role, setRoleState] = useState(() => {
     const stored = localStorage.getItem('ner_role') || sessionStorage.getItem('ner_role');
     return ROLE_LABELS[stored] ? stored : null;
   });
-<<<<<<< HEAD
   const [name, setName] = useState(() => readAuthField('ner_name'));
   const [phone, setPhone] = useState(() => readAuthField('ner_phone'));
 
@@ -76,10 +71,6 @@ export function AuthProvider({ children }) {
   const rememberRef = useRef(
     !(sessionStorage.getItem('ner_token') && !localStorage.getItem('ner_token'))
   );
-=======
-  const [name, setName] = useState(() => localStorage.getItem('ner_name') || sessionStorage.getItem('ner_name') || '');
-  const [phone, setPhone] = useState(() => localStorage.getItem('ner_phone') || sessionStorage.getItem('ner_phone') || '');
->>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
 
   // Stable per-browser-session id, used so a driver's own marker can
   // be excluded from "who's nearby" queries.
@@ -105,35 +96,22 @@ export function AuthProvider({ children }) {
   // ('driver' | 'field_official' | 'authority') -- translated to the
   // app's spelling once, here, so nothing downstream has to know the
   // difference.
-<<<<<<< HEAD
   //
-  // `remember` is the login form's "Remember me" checkbox: true keeps
-  // the session in localStorage so it survives closing the browser and
-  // reopening it (the whole point of the checkbox); false keeps it in
-  // sessionStorage only, so it's gone as soon as the tab/browser closes.
-  // Writing to one and clearing the other avoids a stale copy in the
-  // un-chosen storage answering `readAuthField` on a later reload.
-  const login = (
-    { token: newToken, role: accountRole, full_name: fullName, phone: loggedInPhone },
-    remember = true
-  ) => {
+  // `remember_me` comes from the login form's "Remember me" checkbox:
+  // true keeps the session in localStorage so it survives closing the
+  // browser and reopening it; false keeps it in sessionStorage only,
+  // so it's gone as soon as the tab/browser closes. Clearing both
+  // storages first avoids a stale copy in the un-chosen storage
+  // answering a later reload.
+  const login = ({
+    token: newToken,
+    role: accountRole,
+    full_name: fullName,
+    phone: loggedInPhone,
+    remember_me: shouldRemember = false,
+  }) => {
     const appRole = ACCOUNT_ROLE_TO_APP_ROLE[accountRole] || null;
-    rememberRef.current = remember;
-    const store = remember ? localStorage : sessionStorage;
-    const other = remember ? sessionStorage : localStorage;
 
-    store.setItem('ner_token', newToken);
-    other.removeItem('ner_token');
-    if (appRole) { store.setItem('ner_role', appRole); other.removeItem('ner_role'); }
-    if (fullName) { store.setItem('ner_name', fullName); other.removeItem('ner_name'); }
-    if (loggedInPhone) { store.setItem('ner_phone', loggedInPhone); other.removeItem('ner_phone'); }
-
-=======
-  const login = ({ token: newToken, role: accountRole, full_name: fullName, phone: loggedInPhone, remember_me: shouldRemember = false }) => {
-    const appRole = ACCOUNT_ROLE_TO_APP_ROLE[accountRole] || null;
-    // A remembered login survives browser restarts. A normal login only
-    // lives in the current browser session. Clear the other storage so a
-    // previous remembered login cannot accidentally keep the user signed in.
     localStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');
     localStorage.removeItem('ner_name');
@@ -151,8 +129,8 @@ export function AuthProvider({ children }) {
     if (shouldRemember) localStorage.setItem('ner_remember_me', 'true');
     else localStorage.removeItem('ner_remember_me');
 
+    rememberRef.current = shouldRemember;
     setRememberMe(Boolean(shouldRemember));
->>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
     setTokenState(newToken);
     setRoleState(appRole);
     if (fullName) setName(fullName);
@@ -161,11 +139,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('ner_token');
-    sessionStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');
-<<<<<<< HEAD
-    sessionStorage.removeItem('ner_role');
-=======
     localStorage.removeItem('ner_name');
     localStorage.removeItem('ner_phone');
     localStorage.removeItem('ner_remember_me');
@@ -173,7 +147,7 @@ export function AuthProvider({ children }) {
     sessionStorage.removeItem('ner_role');
     sessionStorage.removeItem('ner_name');
     sessionStorage.removeItem('ner_phone');
->>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
+    rememberRef.current = true;
     setTokenState(null);
     setRoleState(null);
     setRememberMe(false);
