@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { useSegments } from '../../context/SegmentsContext.jsx';
-import { useLanguage } from '../context/LanguageContext.jsx';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 
 const ALERT_TYPES = [
   ['blocked_road', 'Blocked road'],

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api.js';
-import { useLanguage } from '../context/LanguageContext.jsx';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 
 const STATUS_LABELS = {
   normal: 'Normal',
