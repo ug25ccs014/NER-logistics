@@ -80,16 +80,26 @@ export default function LandingPage() {
             <h2>{t('features_heading')}</h2>
             <p>{t('features_sub')}</p>
           </div>
-          <div className="feature-story-image" aria-label="Live Northeast logistics network visualization">
-            <div className="terrain-label"><span /> {t('landing_live_network')}</div>
-            <div className="terrain-route">
-              <i className="network-ping ping-a" />
-              <i className="network-ping ping-b" />
-              <i className="network-ping ping-c" />
-              <span className="network-vehicle">◆</span>
+          <div className="feature-story-image forecast-3d" aria-label="3D terrain forecast visualization">
+            <div className="forecast-head">
+              <div><span className="forecast-live-dot" /> {t('landing_forecast_label')}</div>
+              <span>{t('landing_forecast_model')}</span>
             </div>
-            <div className="network-rain rain-a" /><div className="network-rain rain-b" /><div className="network-rain rain-c" />
-            <div className="network-legend"><span><i className="legend-dot safe"/> {t('landing_clear_corridor')}</span><span><i className="legend-dot watch"/> {t('landing_risk_watch')}</span><span><i className="legend-dot route"/> {t('landing_active_route')}</span></div>
+            <div className="forecast-scene" aria-hidden="true">
+              <div className="forecast-terrain">
+                <span className="ridge ridge-a" /><span className="ridge ridge-b" /><span className="ridge ridge-c" />
+                <span className="risk-peak peak-a" /><span className="risk-peak peak-b" /><span className="risk-peak peak-c" />
+                <span className="forecast-route" /><span className="forecast-cargo" />
+              </div>
+              <div className="forecast-rain rain-a" /><div className="forecast-rain rain-b" /><div className="forecast-rain rain-c" /><div className="forecast-rain rain-d" />
+            </div>
+            <div className="forecast-strip">
+              <div><b>NOW</b><span>{t('landing_forecast_now')}</span></div>
+              <div><b>+6H</b><span>{t('landing_forecast_six')}</span></div>
+              <div><b>+12H</b><span>{t('landing_forecast_twelve')}</span></div>
+              <div><b>+24H</b><span>{t('landing_forecast_day')}</span></div>
+            </div>
+            <div className="forecast-legend"><span><i className="legend-dot safe"/> {t('landing_clear_corridor')}</span><span><i className="legend-dot watch"/> {t('landing_risk_watch')}</span><span><i className="legend-dot route"/> {t('landing_active_route')}</span></div>
           </div>
           <div className="feature-grid">
             {FEATURES.map(([titleKey, descKey, icon], i) => (

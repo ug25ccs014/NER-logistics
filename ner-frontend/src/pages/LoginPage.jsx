@@ -48,10 +48,15 @@ export default function LoginPage() {
           </Link>
           <div className="auth-visual-copy">
             <div className="eyebrow"><span className="pulse-dot" /> {t('login_field_network')}</div>
-            <h1>{lang === 'en' ? 'Move through the region with better road intelligence.' : t('hero_title_start')}</h1>
-            <p>{t('hero_desc')}</p>
+            <h1>{t('login_visual_title')}</h1>
+            <p>{t('login_visual_desc')}</p>
           </div>
-          <div className="auth-route-visual"><span /><i /><b /><em /></div>
+          <div className="auth-signal-board" aria-hidden="true">
+            <div className="signal-route"><span className="signal-car" /><i className="signal-node signal-node-a" /><i className="signal-node signal-node-b" /><i className="signal-node signal-node-c" /></div>
+            <div className="signal-readout"><span>{t('login_live_network')}</span><b>●</b><small>{t('login_live_status')}</small></div>
+            <div className="signal-readout"><span>{t('login_road_risk')}</span><b>LOW</b><small>{t('login_risk_status')}</small></div>
+            <div className="signal-readout"><span>{t('login_field_reports')}</span><b>24/7</b><small>{t('login_field_status')}</small></div>
+          </div>
           <div className="auth-meta"><span>{t('login_live_network')}</span><span>•</span><span>{t('login_road_risk')}</span><span>•</span><span>{t('login_field_reports')}</span></div>
         </motion.div>
 

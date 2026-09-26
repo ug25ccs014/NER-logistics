@@ -18,11 +18,11 @@ export default function HeroBanner() {
         <p>{subtitle}</p>
       </div>
       <svg className="hero-svg" viewBox="0 0 320 120" preserveAspectRatio="xMidYMax slice">
-        <path d="M0 90 Q 60 40 130 80 T 320 70 V120 H0 Z" fill="var(--panel-alt)" />
-        <path d="M0 100 Q 80 70 170 95 T 320 90 V120 H0 Z" fill="var(--panel)" />
-        <path className="hero-cloud hero-cloud-a" d="M30 24 a10 10 0 1 1 0.1 0 Z M22 28 a7 7 0 1 1 0.1 0 Z M40 28 a7 7 0 1 1 0.1 0 Z" fill="#245477" opacity="0.6" />
-        <path className="hero-cloud hero-cloud-b" d="M210 16 a8 8 0 1 1 0.1 0 Z M203 19 a6 6 0 1 1 0.1 0 Z M219 19 a6 6 0 1 1 0.1 0 Z" fill="#245477" opacity="0.5" />
-        <path d="M-20 104 Q 80 78 170 100 T 340 90" fill="none" stroke="var(--border)" strokeWidth="10" strokeLinecap="round" />
+        <path d="M0 90 Q 60 40 130 80 T 320 70 V120 H0 Z" fill="#234B6A" />
+        <path d="M0 100 Q 80 70 170 95 T 320 90 V120 H0 Z" fill="#173A59" />
+        <path className="hero-cloud hero-cloud-a" d="M30 24 a10 10 0 1 1 0.1 0 Z M22 28 a7 7 0 1 1 0.1 0 Z M40 28 a7 7 0 1 1 0.1 0 Z" fill="#9BB9C8" opacity="0.42" />
+        <path className="hero-cloud hero-cloud-b" d="M210 16 a8 8 0 1 1 0.1 0 Z M203 19 a6 6 0 1 1 0.1 0 Z M219 19 a6 6 0 1 1 0.1 0 Z" fill="#B7CDD8" opacity="0.35" />
+        <path d="M-20 104 Q 80 78 170 100 T 340 90" fill="none" stroke="#9BB6C6" strokeWidth="10" strokeLinecap="round" />
         <path d="M-20 104 Q 80 78 170 100 T 340 90" fill="none" stroke="#fbbf24" strokeWidth="2" strokeDasharray="8 10" opacity="0.8" />
         <g className="hero-truck">
           <rect x="0" y="-16" width="26" height="14" rx="2" fill="var(--accent)" />
