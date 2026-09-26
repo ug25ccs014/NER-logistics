@@ -14,7 +14,7 @@ function accommodationIcon() {
   });
 }
 
-function popupHtml(h) {
+function popupHtml(h, t) {
   return `
     <b>${h.name}</b> <span style="color:#666;text-transform:capitalize;">${(h.type || '').replace(/_/g, ' ')}</span><br/>
     ${t('km_away_template').replace('{km}', h.distance_km.toFixed(1))}
@@ -53,7 +53,7 @@ export default function NearbyAccommodations() {
       if (map) {
         markersRef.current = hotels.map((h) => {
           const marker = L.marker([h.lat, h.lon], { icon: accommodationIcon() }).addTo(map);
-          marker.bindPopup(popupHtml(h));
+          marker.bindPopup(popupHtml(h, t));
           return marker;
         });
       }

@@ -18,12 +18,18 @@ export default function RidePanel() {
   const [eta, setEta] = useState(null);
   const [distance, setDistance] = useState(null);
   const [mode, setMode] = useState('');
+  const [gpsStatus, setGpsStatus] = useState(null);
 
   const realGpsWatchRef = useRef(null);
   const realGpsMarkerRef = useRef(null);
   const rideWatchRef = useRef(null);
   const simMarkerRef = useRef(null);
   const simIntervalRef = useRef(null);
+  // watchPosition retries on its own after a timeout, so a plain
+  // "Timeout expired" is usually not the end of the world (common
+  // indoors/under tree cover, which is frequent in NER terrain) --
+  // only permission-denied is unrecoverable and worth a one-time alert.
+  const permissionDeniedAlertedRef = useRef(false);
 
   const updatePanel = (pos, modeLabel) => {
     if (!routeCoords) return;
@@ -47,7 +53,10 @@ export default function RidePanel() {
         }
       },
       (err) => console.warn('GPS watch error:', err.message),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      // A stale fix up to 20s old and a 30s timeout (up from 5s/15s)
+      // means far fewer timeouts to begin with, on top of no longer
+      // treating each one as fatal.
+      { enableHighAccuracy: true, maximumAge: 20000, timeout: 30000 }
     );
   };
 
@@ -89,6 +98,8 @@ export default function RidePanel() {
       return;
     }
     stopRide();
+    permissionDeniedAlertedRef.current = false;
+    setGpsStatus(null);
     rideWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
         const pos = [position.coords.latitude, position.coords.longitude];
@@ -99,9 +110,28 @@ export default function RidePanel() {
         }
         map.panTo(pos);
         updatePanel(pos, '📍 Live GPS tracking (your real device location)');
+        setGpsStatus(null);
       },
-      (err) => alert(`Could not get your location: ${err.message}. Check that location permission is granted for this site.`),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      (err) => {
+        // Permission denied won't fix itself -- watchPosition will just
+        // keep failing the same way, so tell the person once and stop.
+        if (err.code === err.PERMISSION_DENIED) {
+          setGpsStatus('Location permission denied. Check your browser/site settings.');
+          if (!permissionDeniedAlertedRef.current) {
+            permissionDeniedAlertedRef.current = true;
+            alert(`Could not get your location: ${err.message}. Check that location permission is granted for this site.`);
+          }
+          return;
+        }
+        // Timeouts (and "position unavailable") are common indoors/under
+        // tree cover, and watchPosition keeps retrying on its own -- a
+        // quiet inline status instead of a blocking alert on every retry
+        // is what actually made this look "broken/frozen" before.
+        setGpsStatus('Waiting for a GPS signal… this can take a moment indoors or under tree cover.');
+      },
+      // A stale fix up to 20s old and a 30s timeout (up from 5s/15s)
+      // means far fewer timeouts to begin with.
+      { enableHighAccuracy: true, maximumAge: 20000, timeout: 30000 }
     );
     setActive(true);
   };
@@ -144,6 +174,8 @@ export default function RidePanel() {
       ) : (
         <button className="btn btn-stop" onClick={stopRide}>{t('stop_btn')}</button>
       )}
+
+      {active && gpsStatus && <div className="status-line">{gpsStatus}</div>}
 
       {eta !== null && (
         <div className="ride-panel">
