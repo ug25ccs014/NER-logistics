@@ -267,9 +267,10 @@ export default function LiveLocationSos() {
             position: 'fixed', top: 76, right: 20, zIndex: 2000,
             background: '#173A59', border: '2px solid var(--danger)', borderRadius: 10,
             padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+            color: '#FFFFE3',
           }}
         >
-          <div style={{ fontWeight: 'bold', color: 'var(--danger)', marginBottom: 6 }}>{t('someone_needs_help_heading')}</div>
+          <div style={{ fontWeight: 'bold', color: '#FF8A80', marginBottom: 6 }}>{t('someone_needs_help_heading')}</div>
           <div>
             <b>{stuckAlert.driver_name}</b> ({roleLabel(stuckAlert.role)})
             <br />
@@ -277,8 +278,8 @@ export default function LiveLocationSos() {
           </div>
           <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewStuckOnMap}>{t('view_on_map_btn')}</button>
-            <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#18324A' }} onClick={chatFromStuckAlert}>{t('chat_btn')}</button>
-            <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={() => setStuckAlert(null)}>{t('dismiss_btn')}</button>
+            <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#102A43' }} onClick={chatFromStuckAlert}>{t('chat_btn')}</button>
+            <button className="btn" style={{ margin: 0, background: '#3a3a4a', color: '#fff' }} onClick={() => setStuckAlert(null)}>{t('dismiss_btn')}</button>
           </div>
         </div>
       )}

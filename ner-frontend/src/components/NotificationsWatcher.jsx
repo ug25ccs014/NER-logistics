@@ -64,9 +64,10 @@ export default function NotificationsWatcher() {
         position: 'fixed', top: 76, right: 20, zIndex: 2050,
         background: '#173A59', border: '2px solid var(--accent)', borderRadius: 10,
         padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+        color: '#FFFFE3',
       }}
     >
-      <div style={{ fontWeight: 'bold', color: 'var(--accent)', marginBottom: 6 }}>{t('new_notification')}</div>
+      <div style={{ fontWeight: 'bold', color: '#F2C94C', marginBottom: 6 }}>{t('new_notification')}</div>
       <div>
         <b>{n.from_name || 'Someone'}</b> {n.from_role === 'field_official' ? '👮 Field Official' : '🚚 Driver'}<br />
         {n.message || 'notified you.'}{n.from_phone ? <><br />📞 {n.from_phone}</> : null}
@@ -75,8 +76,8 @@ export default function NotificationsWatcher() {
         {n.lat && n.lon && (
           <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewOnMap}>{t('view_on_map_btn')}</button>
         )}
-        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#18324A' }} onClick={chatWithSender}>{t('chat_btn')}</button>
-        <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismiss}>{t('dismiss_btn')}</button>
+        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#102A43' }} onClick={chatWithSender}>{t('chat_btn')}</button>
+        <button className="btn" style={{ margin: 0, background: '#3a3a4a', color: '#fff' }} onClick={dismiss}>{t('dismiss_btn')}</button>
       </div>
     </div>
   );

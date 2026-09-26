@@ -4,8 +4,15 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const TOKEN_KEY = 'ner_token';
 
+// "Remember me" (see AuthContext.jsx) puts the token in localStorage
+// when checked, sessionStorage when not -- check both so requests
+// keep authenticating either way.
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+}
+
 async function request(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = getToken();
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -32,7 +39,7 @@ async function request(path, options = {}) {
 // browser generates it, including the multipart boundary string, and
 // setting it manually breaks the upload with a confusing 422.
 async function uploadRequest(path, formData) {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},

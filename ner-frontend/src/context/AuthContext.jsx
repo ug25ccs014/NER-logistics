@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react';
 
 // ============================================================
 // Single source of truth for "who is logged in and as what".
@@ -44,14 +44,33 @@ export const ACCOUNT_ROLE_TO_APP_ROLE = {
 
 const AuthContext = createContext(null);
 
+// "Remember me" support: a remembered session lives in localStorage
+// (survives closing the browser); an un-remembered one lives in
+// sessionStorage (cleared when the tab/browser closes). Reads check
+// both so it doesn't matter which one a given field ended up in.
+function readAuthField(key) {
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key) ?? '';
+}
+
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(() => localStorage.getItem('ner_token'));
+  const [token, setTokenState] = useState(
+    () => localStorage.getItem('ner_token') || sessionStorage.getItem('ner_token')
+  );
   const [role, setRoleState] = useState(() => {
-    const stored = localStorage.getItem('ner_role');
+    const stored = localStorage.getItem('ner_role') || sessionStorage.getItem('ner_role');
     return ROLE_LABELS[stored] ? stored : null;
   });
-  const [name, setName] = useState(() => localStorage.getItem('ner_name') || '');
-  const [phone, setPhone] = useState(() => localStorage.getItem('ner_phone') || '');
+  const [name, setName] = useState(() => readAuthField('ner_name'));
+  const [phone, setPhone] = useState(() => readAuthField('ner_phone'));
+
+  // Which storage new writes (name/phone updates, next login) go to.
+  // Inferred from where the token we just loaded actually lives, so a
+  // page refresh keeps behaving the way that session was started;
+  // defaults to "remembered" (the old, always-localStorage behavior)
+  // when there's no existing session to infer from yet.
+  const rememberRef = useRef(
+    !(sessionStorage.getItem('ner_token') && !localStorage.getItem('ner_token'))
+  );
 
   // Chat/live-location/notifications/shipment-board all key off this id
   // server-side (see api/db.py), so it has to identify the ACCOUNT, not
@@ -80,11 +99,11 @@ export function AuthProvider({ children }) {
   const sessionId = useMemo(() => (phone ? `acct:${phone}` : anonId), [phone, anonId]);
 
   useEffect(() => {
-    localStorage.setItem('ner_name', name);
+    (rememberRef.current ? localStorage : sessionStorage).setItem('ner_name', name);
   }, [name]);
 
   useEffect(() => {
-    localStorage.setItem('ner_phone', phone);
+    (rememberRef.current ? localStorage : sessionStorage).setItem('ner_phone', phone);
   }, [phone]);
 
   // Called by LoginPage after a successful /auth/login or
@@ -92,12 +111,28 @@ export function AuthProvider({ children }) {
   // ('driver' | 'field_official' | 'authority') -- translated to the
   // app's spelling once, here, so nothing downstream has to know the
   // difference.
-  const login = ({ token: newToken, role: accountRole, full_name: fullName, phone: loggedInPhone }) => {
+  //
+  // `remember` is the login form's "Remember me" checkbox: true keeps
+  // the session in localStorage so it survives closing the browser and
+  // reopening it (the whole point of the checkbox); false keeps it in
+  // sessionStorage only, so it's gone as soon as the tab/browser closes.
+  // Writing to one and clearing the other avoids a stale copy in the
+  // un-chosen storage answering `readAuthField` on a later reload.
+  const login = (
+    { token: newToken, role: accountRole, full_name: fullName, phone: loggedInPhone },
+    remember = true
+  ) => {
     const appRole = ACCOUNT_ROLE_TO_APP_ROLE[accountRole] || null;
-    localStorage.setItem('ner_token', newToken);
-    if (appRole) localStorage.setItem('ner_role', appRole);
-    if (fullName) localStorage.setItem('ner_name', fullName);
-    if (loggedInPhone) localStorage.setItem('ner_phone', loggedInPhone);
+    rememberRef.current = remember;
+    const store = remember ? localStorage : sessionStorage;
+    const other = remember ? sessionStorage : localStorage;
+
+    store.setItem('ner_token', newToken);
+    other.removeItem('ner_token');
+    if (appRole) { store.setItem('ner_role', appRole); other.removeItem('ner_role'); }
+    if (fullName) { store.setItem('ner_name', fullName); other.removeItem('ner_name'); }
+    if (loggedInPhone) { store.setItem('ner_phone', loggedInPhone); other.removeItem('ner_phone'); }
+
     setTokenState(newToken);
     setRoleState(appRole);
     if (fullName) setName(fullName);
@@ -106,7 +141,9 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('ner_token');
+    sessionStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');
+    sessionStorage.removeItem('ner_role');
     setTokenState(null);
     setRoleState(null);
   };
