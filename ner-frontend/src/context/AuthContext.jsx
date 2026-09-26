@@ -23,7 +23,6 @@ export const ROLE_LABELS = {
 const API_ROLE_MAP = {
   driver: 'driver',
   field_reporter: 'field_official',
-  authority: 'authority',
 };
 
 // The ACCOUNT role stored by /auth/register|login (api/auth.py's
@@ -53,13 +52,19 @@ function readAuthField(key) {
 }
 
 export function AuthProvider({ children }) {
+<<<<<<< HEAD
   const [token, setTokenState] = useState(
     () => localStorage.getItem('ner_token') || sessionStorage.getItem('ner_token')
   );
+=======
+  const [token, setTokenState] = useState(() => localStorage.getItem('ner_token') || sessionStorage.getItem('ner_token'));
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('ner_remember_me') === 'true');
+>>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
   const [role, setRoleState] = useState(() => {
     const stored = localStorage.getItem('ner_role') || sessionStorage.getItem('ner_role');
     return ROLE_LABELS[stored] ? stored : null;
   });
+<<<<<<< HEAD
   const [name, setName] = useState(() => readAuthField('ner_name'));
   const [phone, setPhone] = useState(() => readAuthField('ner_phone'));
 
@@ -71,32 +76,21 @@ export function AuthProvider({ children }) {
   const rememberRef = useRef(
     !(sessionStorage.getItem('ner_token') && !localStorage.getItem('ner_token'))
   );
+=======
+  const [name, setName] = useState(() => localStorage.getItem('ner_name') || sessionStorage.getItem('ner_name') || '');
+  const [phone, setPhone] = useState(() => localStorage.getItem('ner_phone') || sessionStorage.getItem('ner_phone') || '');
+>>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
 
-  // Chat/live-location/notifications/shipment-board all key off this id
-  // server-side (see api/db.py), so it has to identify the ACCOUNT, not
-  // the browser -- otherwise logging into the same account from a second
-  // browser/device looks like a brand-new person with no history.
-  //
-  // Every account has a unique phone number (accounts.phone, enforced
-  // in db.create_account), so it's a stable, always-available id to
-  // derive session_id from -- no separate id needs to come back from
-  // the login/register response. Prefixed so it can never collide with
-  // a leftover random UUID from before this change.
-  //
-  // Before login there's no phone yet, so fall back to a random
-  // per-browser id (same as before) purely so nothing reading
-  // sessionId pre-auth breaks; every real feature that uses sessionId
-  // only renders after login (see App.jsx), by which point `phone` is
-  // set and this recomputes to the account-derived id.
-  const [anonId] = useState(() => {
-    let id = localStorage.getItem('ner_anon_id');
+  // Stable per-browser-session id, used so a driver's own marker can
+  // be excluded from "who's nearby" queries.
+  const [sessionId] = useState(() => {
+    let id = localStorage.getItem('ner_session_id');
     if (!id) {
       id = crypto.randomUUID();
-      localStorage.setItem('ner_anon_id', id);
+      localStorage.setItem('ner_session_id', id);
     }
     return id;
   });
-  const sessionId = useMemo(() => (phone ? `acct:${phone}` : anonId), [phone, anonId]);
 
   useEffect(() => {
     (rememberRef.current ? localStorage : sessionStorage).setItem('ner_name', name);
@@ -111,6 +105,7 @@ export function AuthProvider({ children }) {
   // ('driver' | 'field_official' | 'authority') -- translated to the
   // app's spelling once, here, so nothing downstream has to know the
   // difference.
+<<<<<<< HEAD
   //
   // `remember` is the login form's "Remember me" checkbox: true keeps
   // the session in localStorage so it survives closing the browser and
@@ -133,6 +128,31 @@ export function AuthProvider({ children }) {
     if (fullName) { store.setItem('ner_name', fullName); other.removeItem('ner_name'); }
     if (loggedInPhone) { store.setItem('ner_phone', loggedInPhone); other.removeItem('ner_phone'); }
 
+=======
+  const login = ({ token: newToken, role: accountRole, full_name: fullName, phone: loggedInPhone, remember_me: shouldRemember = false }) => {
+    const appRole = ACCOUNT_ROLE_TO_APP_ROLE[accountRole] || null;
+    // A remembered login survives browser restarts. A normal login only
+    // lives in the current browser session. Clear the other storage so a
+    // previous remembered login cannot accidentally keep the user signed in.
+    localStorage.removeItem('ner_token');
+    localStorage.removeItem('ner_role');
+    localStorage.removeItem('ner_name');
+    localStorage.removeItem('ner_phone');
+    sessionStorage.removeItem('ner_token');
+    sessionStorage.removeItem('ner_role');
+    sessionStorage.removeItem('ner_name');
+    sessionStorage.removeItem('ner_phone');
+
+    const storage = shouldRemember ? localStorage : sessionStorage;
+    storage.setItem('ner_token', newToken);
+    if (appRole) storage.setItem('ner_role', appRole);
+    if (fullName) storage.setItem('ner_name', fullName);
+    if (loggedInPhone) storage.setItem('ner_phone', loggedInPhone);
+    if (shouldRemember) localStorage.setItem('ner_remember_me', 'true');
+    else localStorage.removeItem('ner_remember_me');
+
+    setRememberMe(Boolean(shouldRemember));
+>>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
     setTokenState(newToken);
     setRoleState(appRole);
     if (fullName) setName(fullName);
@@ -143,9 +163,20 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ner_token');
     sessionStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');
+<<<<<<< HEAD
     sessionStorage.removeItem('ner_role');
+=======
+    localStorage.removeItem('ner_name');
+    localStorage.removeItem('ner_phone');
+    localStorage.removeItem('ner_remember_me');
+    sessionStorage.removeItem('ner_token');
+    sessionStorage.removeItem('ner_role');
+    sessionStorage.removeItem('ner_name');
+    sessionStorage.removeItem('ner_phone');
+>>>>>>> f68b91aac1d42ced71cac8ded114aae9078fd5cb
     setTokenState(null);
     setRoleState(null);
+    setRememberMe(false);
   };
 
   const value = useMemo(
@@ -162,8 +193,9 @@ export function AuthProvider({ children }) {
       phone,
       setPhone,
       sessionId,
+      rememberMe,
     }),
-    [token, role, name, phone, sessionId]
+    [token, role, name, phone, sessionId, rememberMe]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
