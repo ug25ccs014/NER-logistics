@@ -14,12 +14,23 @@ function ProtectedApp() {
   return <App />;
 }
 
+// Mirror image of ProtectedApp: the landing page and login form are
+// only useful to someone who ISN'T logged in. If a "Remember me"
+// session is already sitting in localStorage/sessionStorage (see
+// AuthContext.jsx), send them straight to the dashboard instead --
+// that's the whole point of remembering them.
+function PublicOnly({ children }) {
+  const { isAuthenticated } = useAuth();
+  if (isAuthenticated) return <Navigate to="/app" replace />;
+  return children;
+}
+
 export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<PublicOnly><LandingPage /></PublicOnly>} />
+        <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
         <Route path="/app" element={<ProtectedApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

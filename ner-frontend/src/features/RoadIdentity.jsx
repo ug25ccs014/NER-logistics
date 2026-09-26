@@ -101,7 +101,7 @@ export default function RoadIdentity() {
         <div className="card" key={road.id} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
             <div><b>{road.name_status === 'unnamed' ? 'Unnamed Road' : road.name}</b><div className="status-line">{road.road_code} · {road.distance_km} km away</div></div>
-            <span style={{ color: '#F2C94C', fontSize: 12 }}>{road.name_status}</span>
+            <span style={{ color: '#173A59', background: '#F2C94C', fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{road.name_status}</span>
           </div>
           <div className="status-line">{road.unique_passers} traveller(s) · {road.submission_count} name submission(s)</div>
           {road.suggested_name && <div style={{ marginTop: 5 }}>{t('suggested')} <b>{road.suggested_name}</b></div>}

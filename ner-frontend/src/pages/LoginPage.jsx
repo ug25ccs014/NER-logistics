@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('driver');
   const [passkey, setPasskey] = useState('');
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +31,7 @@ export default function LoginPage() {
         ? await api.login(phone.trim(), password)
         : await api.register({ fullName: fullName.trim(), phone: phone.trim(), password,
             role: APP_ROLE_TO_ACCOUNT_ROLE[role], passkey: needsPasskey ? passkey.trim() : undefined });
-      login({ ...result, phone: phone.trim() });
+      login({ ...result, phone: phone.trim() }, mode === 'login' ? remember : true);
       navigate('/app', { replace: true });
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
@@ -81,6 +82,12 @@ export default function LoginPage() {
             <div className="auth-field"><label>{t('password')}</label><input required type="password" minLength={mode === 'register' ? 8 : undefined} value={password} onChange={e=>setPassword(e.target.value)} placeholder={t(mode === 'register' ? 'password_ph_register' : 'password_ph_login')} /></div>
             {mode === 'register' && <div className="auth-field"><label>{t('role_prompt')}</label><select value={role} onChange={e=>setRole(e.target.value)}>{Object.keys(ROLE_LABELS).map(v=><option key={v} value={v}>{t(roleLabelKey[v])}</option>)}</select></div>}
             {needsPasskey && <><div className="auth-field"><label>{t('passkey_label')}</label><input required value={passkey} onChange={e=>setPasskey(e.target.value)} placeholder={t('passkey_ph')} /></div><div className="auth-passkey-note">{t('passkey_note')}</div></>}
+            {mode === 'login' && (
+              <label className="auth-remember">
+                <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+                <span>{t('remember_me')}</span>
+              </label>
+            )}
             <button className="auth-submit" type="submit" disabled={busy}>{busy ? t('please_wait') : mode === 'login' ? t('sign_in') : t('create_account_tab')} <span>→</span></button>
           </form>
           <Link to="/" className="auth-back">{t('back_to_home')}</Link>

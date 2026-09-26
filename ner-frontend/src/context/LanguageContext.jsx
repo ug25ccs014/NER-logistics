@@ -136,6 +136,7 @@ const UI_STRINGS = {
   password: { en: 'Password', hi: 'पासवर्ड', as: 'পাছৱৰ্ড' },
   password_ph_register: { en: 'At least 8 characters', hi: 'कम से कम 8 अक्षर', as: 'কমেও ৮টা আখৰ' },
   password_ph_login: { en: 'Your password', hi: 'आपका पासवर्ड', as: 'আপোনাৰ পাছৱৰ্ড' },
+  remember_me: { en: 'Remember me', hi: 'मुझे याद रखें', as: 'মোক মনত ৰাখা' },
   role_prompt: { en: 'I am a...', hi: 'मैं हूँ...', as: 'মই...' },
   passkey_label: { en: 'Organization passkey', hi: 'संगठन पासकी', as: 'প্ৰতিষ্ঠানৰ পাছকী' },
   passkey_ph: { en: 'Provided by your department', hi: 'आपके विभाग द्वारा प्रदान किया गया', as: 'আপোনাৰ বিভাগে প্ৰদান কৰা' },

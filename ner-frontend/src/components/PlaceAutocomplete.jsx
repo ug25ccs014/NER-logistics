@@ -69,6 +69,7 @@ export default function PlaceAutocomplete({ placeholder, value, onChange, onPick
             zIndex: 10,
             maxHeight: 200,
             overflowY: 'auto',
+            color: '#FFFFE3',
           }}
         >
           {suggestions.map((s, i) => (
