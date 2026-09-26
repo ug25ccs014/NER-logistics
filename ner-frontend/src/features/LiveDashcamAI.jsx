@@ -166,12 +166,12 @@ export default function LiveDashcamAI() {
             Dashcam → image frame → AI hazard detection → risk score → alert routing
           </div>
         </div>
-        <div className={`ai-live-pill ${cameraOn ? 'is-live' : ''}`}>
-          {cameraOn ? '● LIVE' : '● READY'}
-        </div>
+        {cameraOn && (
+          <div className="ai-live-pill is-live">● LIVE</div>
+        )}
       </div>
 
-      <div className="ai-video-card">
+      <div className={`ai-video-card ${cameraOn ? 'is-active' : ''}`}>
         <video ref={videoRef} className="ai-video" muted playsInline />
         {!cameraOn && (
           <div className="ai-video-placeholder">
