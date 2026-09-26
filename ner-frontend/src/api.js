@@ -1,42 +1,16 @@
-// In development, use the Vite /api proxy so the browser never needs
-// to connect directly to FastAPI (avoids CORS/localhost-origin problems).
-// For production, set VITE_API_BASE to the public API base URL.
-export const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+// Point this at your existing FastAPI backend (api/main.py).
+// Set VITE_API_BASE in a .env file to override for prod builds.
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 const TOKEN_KEY = 'ner_token';
 
 async function request(path, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
-  let res;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      ...options,
-    });
-  } catch (err) {
-    throw new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
-  }
-  if (!res.ok) {
-    let detail;
-    try { detail = (await res.json()).detail; } catch { /* not JSON */ }
-    throw new Error(detail || `API ${path} returned ${res.status}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-}
-
-// Same auth + error handling as request(), but for multipart/form-data
-// uploads. The key difference: it must NOT set Content-Type -- the
-// browser generates it, including the multipart boundary string, and
-// setting it manually breaks the upload with a confusing 422.
-async function uploadRequest(path, formData) {
-  const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...options,
   });
   if (!res.ok) {
     let detail;
@@ -59,11 +33,11 @@ export const api = {
   // Auth -- real accounts, bcrypt-hashed server-side. login/register
   // return { token, role, full_name }; request() above then sends
   // that token as a Bearer header on every subsequent call automatically.
-  login: (phone, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password }) }),
-  register: ({ fullName, phone, password, role, passkey }) =>
+  login: (phone, password, rememberMe = false) => request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember_me: rememberMe }) }),
+  register: ({ fullName, phone, password, role, passkey, rememberMe = false }) =>
     request('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ full_name: fullName, phone, password, role, passkey: passkey || undefined }),
+      body: JSON.stringify({ full_name: fullName, phone, password, role, passkey: passkey || undefined, remember_me: rememberMe }),
     }),
   me: () => request('/auth/me'),
 
@@ -136,10 +110,6 @@ export const api = {
       body: JSON.stringify({ session_id: sessionId, status }),
     }),
 
-  // Planned-trip forecast: route segments are sent in route order so the backend can estimate arrival time per section.
-  forecastSegments: (departAtLocalIso, segmentIds, journeyMinutes = 60) =>
-    request(`/segments/forecast?depart_at=${encodeURIComponent(departAtLocalIso)}&segment_ids=${segmentIds.join(',')}&journey_minutes=${encodeURIComponent(journeyMinutes)}`),
-
   // Route segments (for the map)
   segments: () => request('/segments'),
 
@@ -148,40 +118,6 @@ export const api = {
   chatThread: (sessionId, withSessionId) =>
     request(`/chat/thread?session_id=${sessionId}&with_session_id=${withSessionId}`),
   chatInbox: (sessionId) => request(`/chat/inbox?session_id=${sessionId}`),
-
-  // --- AI dashcam ---
-  // Presence/session registration. App.jsx calls this on a heartbeat for
-  // whoever is logged in, so the AI alert pipeline knows which authority
-  // sessions are currently active and can target them. Returns
-  // { provider, threshold, high_risk_threshold }.
-  registerAISession: (sessionId) =>
-    request('/ai/session', { method: 'POST', body: JSON.stringify({ session_id: sessionId }) }),
-
-  // Recent detections feed for the dashcam panel's history list.
-  aiDetections: (limit = 50) => request(`/ai/detections?limit=${limit}`),
-
-  // detect-frame and analyze-video take the file as multipart/form-data
-  // with everything else as QUERY params (see main.py's signatures) --
-  // so they can't go through request(), which forces a JSON body and a
-  // JSON Content-Type. They use uploadRequest() below instead, which
-  // lets the browser set its own multipart boundary header.
-  detectAIFrame: ({ sessionId, lat, lon, imageBlob, vehicleId, capturedAt }) => {
-    const form = new FormData();
-    form.append('image', imageBlob, 'frame.jpg');
-    const qs = new URLSearchParams({ session_id: sessionId, lat, lon });
-    if (vehicleId != null) qs.set('vehicle_id', vehicleId);
-    if (capturedAt) qs.set('captured_at', capturedAt);
-    return uploadRequest(`/ai/detect-frame?${qs}`, form);
-  },
-
-  analyzeAIVideo: ({ sessionId, lat, lon, videoFile, sampleEvery = 1.0 }) => {
-    const form = new FormData();
-    form.append('video', videoFile, videoFile.name || 'clip.mp4');
-    const qs = new URLSearchParams({
-      session_id: sessionId, lat, lon, sample_every: sampleEvery,
-    });
-    return uploadRequest(`/ai/analyze-video?${qs}`, form);
-  },
 };
 
 // --- Geocoding / place search (Nominatim, a public OSM service --
