@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import PlaceAutocomplete from '../components/PlaceAutocomplete.jsx';
 import { api, geocodePlace } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -9,6 +10,7 @@ const CARGO_TYPES = ['general', 'medicine', 'food', 'construction', 'agriculture
 
 export default function ShipmentBoard() {
   const { name, phone, sessionId } = useAuth();
+  const { t } = useLanguage();
   const [formOpen, setFormOpen] = useState(false);
   const [origin, setOrigin] = useState('');
   const [originPlace, setOriginPlace] = useState(null);
@@ -56,11 +58,11 @@ export default function ShipmentBoard() {
 
   const submitPost = async () => {
     if (!name.trim() || !phone.trim()) {
-      alert('Fill in your name and phone above (in Nearby Help) first.');
+      alert(t('shipment_need_identity'));
       return;
     }
     if (!origin.trim() || !dest.trim() || !date) {
-      alert('From, To and Date are required.');
+      alert(t('shipment_required'));
       return;
     }
     let o, d;
@@ -142,9 +144,9 @@ export default function ShipmentBoard() {
 
   return (
     <div>
-      <div className="section-title">Shipment Board (Merge Cargo, Save Cost)</div>
+      <div className="section-title">{t('shipment_board_title')}</div>
       <button className="btn btn-primary" onClick={() => setFormOpen((v) => !v)}>
-        📦 Post an Upcoming Trip
+        {t('post_trip')}
       </button>
 
       {formOpen && (
@@ -194,13 +196,13 @@ export default function ShipmentBoard() {
             onChange={(e) => setNotes(e.target.value)}
           />
           <button className="btn" style={{ background: '#7c3aed' }} onClick={findMatches}>
-            🔍 Find Matches for This Trip
+            {t('find_matches')}
           </button>
           <button className="btn" style={{ background: '#0e7490' }} onClick={previewRisk}>
-            🗺️ Preview Trip Risk for Departure Time
+            {t('preview_trip_risk')}
           </button>
-          <button className="btn btn-primary" onClick={submitPost}>Post to Board</button>
-          <button className="btn" style={{ background: '#3a3a4a' }} onClick={() => { setFormOpen(false); setForecastPreview(null); }}>Cancel</button>
+          <button className="btn btn-primary" onClick={submitPost}>{t('post_to_board')}</button>
+          <button className="btn" style={{ background: '#3a3a4a' }} onClick={() => { setFormOpen(false); setForecastPreview(null); }}>{t('cancel')}</button>
         </div>
       )}
 
@@ -213,9 +215,9 @@ export default function ShipmentBoard() {
         />
       )}
 
-      {result?.loading && <div className="status-line" style={{ marginTop: 8 }}>Finding drivers on a similar route...</div>}
+      {result?.loading && <div className="status-line" style={{ marginTop: 8 }}>{t('finding_drivers')}</div>}
       {result?.error && <div className="status-line" style={{ marginTop: 8 }}>{result.error}</div>}
-      {result?.done && <div className="status-line" style={{ marginTop: 8 }}>Marked merged -- removed from the board.</div>}
+      {result?.done && <div className="status-line" style={{ marginTop: 8 }}>{t('marked_merged')}</div>}
       {result?.posted && (
         <div className="card" style={{ borderLeft: '3px solid var(--good)', marginTop: 8 }}>
           <b>✅ Posted:</b> {result.posted.originText} → {result.posted.destText} ({result.posted.date})
@@ -247,7 +249,7 @@ export default function ShipmentBoard() {
             style={{ background: 'var(--good)', color: '#0f172a', marginTop: 6, width: 'auto', padding: '4px 10px', fontSize: 12 }}
             onClick={() => contact(s.post)}
           >
-            🔔 Contact to Merge
+            {t('contact_merge')}
           </button>
         </div>
       ))}

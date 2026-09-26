@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { useChat } from '../context/ChatContext.jsx';
 
 function partnerEmoji(role) {
@@ -9,6 +10,7 @@ function partnerEmoji(role) {
 // open -- separate from NotificationsWatcher's one-shot "Notify"
 // toast, since this is for the threaded Chat system.
 export default function ChatMessageNotifyToast() {
+  const { t } = useLanguage();
   const { notifyQueue, dismissNotify, replyFromNotify } = useChat();
   if (notifyQueue.length === 0) return null;
   const n = notifyQueue[0];
@@ -21,15 +23,15 @@ export default function ChatMessageNotifyToast() {
         padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
       }}
     >
-      <div style={{ fontWeight: 'bold', color: 'var(--good)', marginBottom: 6 }}>💬 New message</div>
+      <div style={{ fontWeight: 'bold', color: 'var(--good)', marginBottom: 6 }}>{t('new_message')}</div>
       <div>
         <b>{partnerEmoji(n.other_role)} {n.other_name || 'Someone'}</b>
         <br />
         {(n.last_message || '').slice(0, 120)}
       </div>
       <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-        <button className="btn btn-primary" style={{ margin: 0 }} onClick={replyFromNotify}>Reply</button>
-        <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismissNotify}>Dismiss</button>
+        <button className="btn btn-primary" style={{ margin: 0 }} onClick={replyFromNotify}>{t('reply')}</button>
+        <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismissNotify}>{t('dismiss_btn')}</button>
       </div>
     </div>
   );

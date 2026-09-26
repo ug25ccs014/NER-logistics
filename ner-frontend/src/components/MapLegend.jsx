@@ -1,8 +1,10 @@
 import React from 'react';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 // Ported from the original app's .legend div -- explains what the
 // route/segment colors mean. Sits over the map, bottom-left.
 export default function MapLegend() {
+  const { t } = useLanguage();
   return (
     <div
       style={{
@@ -14,7 +16,7 @@ export default function MapLegend() {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
-        No data
+        {t('map_no_data')}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span
@@ -23,7 +25,7 @@ export default function MapLegend() {
             background: 'linear-gradient(90deg, #22c55e 0%, #eab308 35%, #f97316 65%, #dc2626 100%)',
           }}
         />
-        Low risk &rarr; Severe
+        {t('map_low_severe')}
       </div>
     </div>
   );

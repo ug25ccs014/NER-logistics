@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { scoreShipmentCandidates, hoursUntilDeparture, cargoTypeIcon } from '../utils/geo.js';
 
@@ -11,6 +12,7 @@ const OTHER_WINDOW_HOURS = 72;
 // split into "departing soon" vs "later this week" -- no need to
 // separately open the Shipment Board form and search again.
 export default function ShipmentMatchesForRoute({ origin, dest }) {
+  const { t } = useLanguage();
   const { sessionId, name, phone } = useAuth();
   const [urgent, setUrgent] = useState([]);
   const [other, setOther] = useState([]);
@@ -69,7 +71,7 @@ export default function ShipmentMatchesForRoute({ origin, dest }) {
         style={{ background: 'var(--good)', color: '#0f172a', marginTop: 6, width: 'auto', padding: '4px 10px', fontSize: 12 }}
         onClick={() => contact(s.post)}
       >
-        🔔 Contact to Merge
+        {t('contact_merge')}
       </button>
     </div>
   );
@@ -80,13 +82,13 @@ export default function ShipmentMatchesForRoute({ origin, dest }) {
     <div>
       {urgent.length > 0 && (
         <>
-          <div className="section-title" style={{ marginTop: 14 }}>🚀 Find Trips (departing within {URGENT_WINDOW_HOURS}h)</div>
+          <div className="section-title" style={{ marginTop: 14 }}>{t('find_trips_urgent').replace('{h}', URGENT_WINDOW_HOURS)}</div>
           {urgent.map(card)}
         </>
       )}
       {other.length > 0 && (
         <>
-          <div className="section-title" style={{ marginTop: 14 }}>📅 Find Other Trips (next 3 days)</div>
+          <div className="section-title" style={{ marginTop: 14 }}>{t('find_other_trips')}</div>
           {other.map(card)}
         </>
       )}

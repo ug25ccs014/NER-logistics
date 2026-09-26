@@ -85,8 +85,8 @@ export const TOOLS_BY_ROLE = {
     },
     {
       id: 'road-identity',
-      label: 'Road Identity',
-      description: 'Help identify unnamed roads and use verified road names on future trips.',
+      labelKey: 'road_identity',
+      descKey: 'road_identity_help',
       icon: 'route',
       needsMap: true,
       Component: RoadIdentity,
@@ -152,8 +152,8 @@ export const TOOLS_BY_ROLE = {
     },
     {
       id: 'road-identity',
-      label: 'Road Identity',
-      description: 'Help identify unnamed roads and use verified road names on future trips.',
+      labelKey: 'road_identity',
+      descKey: 'road_identity_help',
       icon: 'route',
       needsMap: true,
       Component: RoadIdentity,
@@ -211,8 +211,8 @@ export const TOOLS_BY_ROLE = {
     },
     {
       id: 'road-identity',
-      label: 'Road Identity',
-      description: 'Help identify unnamed roads and use verified road names on future trips.',
+      labelKey: 'road_identity',
+      descKey: 'road_identity_help',
       icon: 'route',
       needsMap: true,
       Component: RoadIdentity,

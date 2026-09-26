@@ -11,7 +11,7 @@ const FIELD_REPORT_EMOJI = {
 export default function ReviewQueue() {
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
 
   const load = () => api.fieldReports(30, lang).then(setReports).catch((err) => setError(err.message));
   useEffect(() => { load(); }, [lang]);
@@ -36,22 +36,22 @@ export default function ReviewQueue() {
 
   return (
     <div>
-      <div className="section-title">Field Report Review Queue</div>
+      <div className="section-title">{t('review_queue')}</div>
       {error && <div className="status-line">Failed to load review queue: {error}</div>}
-      {!error && reports.length === 0 && <div className="status-line">No field reports yet.</div>}
+      {!error && reports.length === 0 && <div className="status-line">{t('no_field_reports')}</div>}
       {reports.map((r) => (
         <div className="card" key={r.id} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{FIELD_REPORT_EMOJI[r.report_type] || ''} {(r.report_type_label || r.report_type || '').replace(/_/g, ' ')}</span>
             {r.verified
-              ? <span style={{ color: 'var(--good)', fontSize: 12 }}>✅ verified</span>
-              : <span style={{ color: 'var(--muted)', fontSize: 12 }}>pending</span>}
+              ? <span style={{ color: 'var(--good)', fontSize: 12 }}>✅ {t('verified')}</span>
+              : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{t('pending')}</span>}
           </div>
-          <div className="status-line">{r.description || 'No description'}</div>
+          <div className="status-line">{r.description || t('no_description')}</div>
           {r.photo_url && (
             <img
               src={resolvePhotoUrl(r.photo_url)}
-              alt="Field report photo"
+              alt={t('field_report_photo')}
               style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 6, marginTop: 6, cursor: 'zoom-in' }}
               onClick={() => window.open(resolvePhotoUrl(r.photo_url), '_blank')}
             />

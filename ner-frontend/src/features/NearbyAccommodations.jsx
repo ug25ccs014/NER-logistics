@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { api } from '../api.js';
 import { useMap } from '../context/MapContext.jsx';
 import { useGeolocation } from '../hooks/useGeolocation.js';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 function accommodationIcon() {
   return L.divIcon({
@@ -16,13 +17,14 @@ function accommodationIcon() {
 function popupHtml(h) {
   return `
     <b>${h.name}</b> <span style="color:#666;text-transform:capitalize;">${(h.type || '').replace(/_/g, ' ')}</span><br/>
-    ${h.distance_km.toFixed(1)} km away
+    ${t('km_away_template').replace('{km}', h.distance_km.toFixed(1))}
     ${h.phone ? `<br/>📞 ${h.phone}` : ''}
     ${h.address ? `<br/>📍 ${h.address}` : ''}
   `;
 }
 
 export default function NearbyAccommodations() {
+  const { t } = useLanguage();
   const { map } = useMap();
   const { getPosition } = useGeolocation();
   const [results, setResults] = useState([]);
@@ -72,15 +74,15 @@ export default function NearbyAccommodations() {
 
   return (
     <div>
-      <div className="section-title">🛏️ Nearby Accommodations</div>
-      <button className="btn" onClick={search}>Find places to rest nearby</button>
+      <div className="section-title">{t('nearby_accommodations')}</div>
+      <button className="btn" onClick={search}>{t('nearby_rest')}</button>
       {status && <div className="status-line">{status}</div>}
       {results.map((h, idx) => (
         <div className="card" key={idx} onClick={() => showOnMap(idx)}>
           <b>{h.name}</b>{' '}
           <span style={{ color: '#999' }}>{(h.type || '').replace(/_/g, ' ')}</span>
           <div className="status-line">
-            {h.distance_km.toFixed(1)} km away
+            {t('km_away_template').replace('{km}', h.distance_km.toFixed(1))}
             {h.phone ? ` · 📞 ${h.phone}` : ''}
             {h.address ? ` · ${h.address}` : ''}
           </div>

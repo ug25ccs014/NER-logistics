@@ -4,12 +4,14 @@ import { api } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useChat } from '../context/ChatContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 // Ported from checkForDirectNotifications(): polls every 8s for
 // anything addressed to this session_id (sent via the Notify buttons
 // elsewhere in the app) and shows a dismissible toast, with an
-// optional "View on Map" if the sender included their location.
+// optional "{t('view_on_map_btn')}" if the sender included their location.
 export default function NotificationsWatcher() {
+  const { t } = useLanguage();
   const { sessionId } = useAuth();
   const { map } = useMap();
   const { openChat } = useChat();
@@ -64,17 +66,17 @@ export default function NotificationsWatcher() {
         padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
       }}
     >
-      <div style={{ fontWeight: 'bold', color: 'var(--accent)', marginBottom: 6 }}>🔔 New notification</div>
+      <div style={{ fontWeight: 'bold', color: 'var(--accent)', marginBottom: 6 }}>{t('new_notification')}</div>
       <div>
         <b>{n.from_name || 'Someone'}</b> {n.from_role === 'field_official' ? '👮 Field Official' : '🚚 Driver'}<br />
         {n.message || 'notified you.'}{n.from_phone ? <><br />📞 {n.from_phone}</> : null}
       </div>
       <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
         {n.lat && n.lon && (
-          <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewOnMap}>View on Map</button>
+          <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewOnMap}>{t('view_on_map_btn')}</button>
         )}
-        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#0f172a' }} onClick={chatWithSender}>💬 Chat</button>
-        <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismiss}>Dismiss</button>
+        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#0f172a' }} onClick={chatWithSender}>{t('chat_btn')}</button>
+        <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismiss}>{t('dismiss_btn')}</button>
       </div>
     </div>
   );

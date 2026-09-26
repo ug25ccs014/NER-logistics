@@ -6,7 +6,7 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 export default function TopBar() {
   const { role, roleLabel, name, logout } = useAuth();
   const { activeTool, goHome, goBack, goForward, canGoBack, canGoForward } = useNavigation();
-  const { t } = useLanguage();
+  const { t, lang, setLang } = useLanguage();
 
   return (
     <div className="topbar">
@@ -50,9 +50,14 @@ export default function TopBar() {
         </div>
       </div>
       <div className="topbar-right">
-        {/* Language is chosen once on the landing page (see
-            LanguageContext + LandingPage) -- no need to ask again
-            here, it's already in effect app-wide via localStorage. */}
+        <label className="language-control app-language" title="Language">
+          <span>文</span>
+          <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">
+            <option value="en">English</option>
+            <option value="hi">हिन्दी</option>
+            <option value="as">অসমীয়া</option>
+          </select>
+        </label>
         <div className="role-pill" title={roleLabel}>
           <span>{name || t('account_fallback')}</span>
           <span style={{ opacity: 0.65, marginLeft: 6, fontWeight: 400 }}>· {roleLabel}</span>

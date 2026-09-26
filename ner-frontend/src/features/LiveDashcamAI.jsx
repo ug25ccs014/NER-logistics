@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api, resolvePhotoUrl } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 function formatPct(v) {
   return `${Math.round((Number(v) || 0) * 100)}%`;
@@ -18,6 +19,7 @@ function tierFor(riskScore, thresholds) {
 }
 
 export default function LiveDashcamAI() {
+  const { t } = useLanguage();
   const { sessionId, name, role } = useAuth();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);

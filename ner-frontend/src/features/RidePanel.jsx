@@ -2,25 +2,18 @@ import React, { useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../context/MapContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
-import { useLanguage } from '../context/LanguageContext.jsx';
 import { pulsingDotIcon, simPositionIcon } from '../utils/mapIcons.js';
 import { haversineKm } from '../utils/geo.js';
-
-function fill(template, vars) {
-  return Object.entries(vars).reduce(
-    (str, [k, v]) => str.replace(`{${k}}`, v),
-    template
-  );
-}
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 // Ported from startRealRide() / startSimulatedRide() / stopRide().
 // "Start Ride" follows your actual device GPS (green pulsing dot);
 // "Simulate Ride" walks a marker along the searched route for demos,
 // while the green dot keeps tracking your real position underneath.
 export default function RidePanel() {
+  const { t } = useLanguage();
   const { map } = useMap();
   const { routeCoords } = useActiveRoute();
-  const { t } = useLanguage();
   const [active, setActive] = useState(false);
   const [eta, setEta] = useState(null);
   const [distance, setDistance] = useState(null);
@@ -88,11 +81,11 @@ export default function RidePanel() {
 
   const startRealRide = () => {
     if (!navigator.geolocation) {
-      alert(t('geo_not_supported_alert'));
+      alert(t('err_geo_unsupported'));
       return;
     }
     if (!window.isSecureContext) {
-      alert(t('geo_needs_https_alert'));
+      alert(t('err_geo_https'));
       return;
     }
     stopRide();
@@ -105,9 +98,9 @@ export default function RidePanel() {
           realGpsMarkerRef.current.setLatLng(pos);
         }
         map.panTo(pos);
-        updatePanel(pos, t('live_gps_mode_label'));
+        updatePanel(pos, '📍 Live GPS tracking (your real device location)');
       },
-      (err) => alert(fill(t('geo_error_alert_template'), { err: err.message })),
+      (err) => alert(`Could not get your location: ${err.message}. Check that location permission is granted for this site.`),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
     setActive(true);
@@ -131,7 +124,7 @@ export default function RidePanel() {
         simMarkerRef.current.setLatLng(pos);
       }
       map.panTo(pos);
-      updatePanel(pos, t('simulated_ride_mode_label'));
+      updatePanel(pos, '▶ Simulated ride (for demo purposes)');
       i += Math.max(1, Math.floor(routeCoords.length / 200));
     }, stepEvery);
     setActive(true);
@@ -155,7 +148,7 @@ export default function RidePanel() {
       {eta !== null && (
         <div className="ride-panel">
           <div className="big">{eta}</div>
-          <div className="status-line">{fill(t('min_remaining_km_left_template'), { km: distance })}</div>
+          <div className="status-line">{t('min_remaining_km_left_template').replace('{km}', distance)}</div>
           <div className="status-line">{mode}</div>
         </div>
       )}

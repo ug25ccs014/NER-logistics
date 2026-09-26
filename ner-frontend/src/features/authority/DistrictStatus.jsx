@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api.js';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const STATUS_LABELS = {
   normal: 'Normal',
@@ -15,6 +16,7 @@ const STATUS_COLORS = {
 };
 
 export default function DistrictStatus() {
+  const { t } = useLanguage();
   const [districts, setDistricts] = useState([]);
   const [error, setError] = useState(null);
 
@@ -26,7 +28,7 @@ export default function DistrictStatus() {
     <div>
       <div className="section-title">District Connectivity ({districts.length})</div>
       {error && <div className="status-line">Failed to load district status: {error}</div>}
-      {!error && districts.length === 0 && <div className="status-line">No districts on file.</div>}
+      {!error && districts.length === 0 && <div className="status-line">{t('no_districts')}</div>}
       {districts.map((d, idx) => (
         <div className="card" key={idx} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

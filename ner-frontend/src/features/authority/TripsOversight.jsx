@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api.js';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const STATUS_COLORS = {
   in_transit: 'var(--accent)',
@@ -9,6 +10,7 @@ const STATUS_COLORS = {
 };
 
 export default function TripsOversight() {
+  const { t } = useLanguage();
   const [trips, setTrips] = useState([]);
   const [error, setError] = useState(null);
 
@@ -20,7 +22,7 @@ export default function TripsOversight() {
     <div>
       <div className="section-title">Trip / Vehicle Oversight ({trips.length})</div>
       {error && <div className="status-line">Failed to load trips: {error}</div>}
-      {!error && trips.length === 0 && <div className="status-line">No trips on file.</div>}
+      {!error && trips.length === 0 && <div className="status-line">{t('no_trips')}</div>}
       {trips.map((t, idx) => (
         <div className="card" key={idx} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

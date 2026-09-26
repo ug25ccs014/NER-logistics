@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 function IdentityLayer() {
   const { map } = useMap();
@@ -29,6 +30,7 @@ function IdentityLayer() {
 }
 
 export default function RoadIdentity() {
+  const { t } = useLanguage();
   const { role } = useAuth();
   const { lastPosition } = useLocationTracking();
   const { refresh: refreshSegments } = useSegments();
@@ -65,7 +67,7 @@ export default function RoadIdentity() {
     if (!selected || !name.trim()) return;
     try {
       await api.submitRoadName({ segment_id: selected.id, submitted_name: name.trim(), language, note: note.trim() || null, source: 'road_identity' });
-      setStatus('Name submitted for verification.');
+      setStatus(t('name_submitted_status'));
       setSelected(null);
       setName('');
       await load();
@@ -77,22 +79,22 @@ export default function RoadIdentity() {
       await api.reviewRoadName(id, approve);
       setQueue((items) => items.filter((x) => x.id !== id));
       if (approve) refreshSegments();
-      setStatus(approve ? 'Road name verified and activated on the map.' : 'Submission rejected.');
+      setStatus(approve ? t('road_verified_status') : t('submission_rejected_status'));
     } catch (err) { setStatus(err.message); }
   };
 
   return (
     <>
       <IdentityLayer />
-      <div className="section-title">Road Identity</div>
+      <div className="section-title">{t('road_identity')}</div>
       <div className="status-line" style={{ marginBottom: 10 }}>
-        Every road keeps a stable NER Road ID. Unnamed roads can be identified by drivers and field teams, then verified by an authority.
+        {t('road_identity_description')}
       </div>
 
-      {!lastPosition && <div className="card">Location permission is needed to show unnamed roads near you.</div>}
+      {!lastPosition && <div className="card">{t('road_identity_location')}</div>}
 
       {roads.length === 0 && lastPosition && (
-        <div className="card">No unnamed roads detected within 25 km of your current location.</div>
+        <div className="card">{t('unnamed_nearby_none')}</div>
       )}
 
       {roads.map((road) => (
@@ -102,36 +104,36 @@ export default function RoadIdentity() {
             <span style={{ color: '#eab308', fontSize: 12 }}>{road.name_status}</span>
           </div>
           <div className="status-line">{road.unique_passers} traveller(s) · {road.submission_count} name submission(s)</div>
-          {road.suggested_name && <div style={{ marginTop: 5 }}>Suggested: <b>{road.suggested_name}</b></div>}
-          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => choose(road)}>Suggest / Confirm Local Name</button>
+          {road.suggested_name && <div style={{ marginTop: 5 }}>{t('suggested')} <b>{road.suggested_name}</b></div>}
+          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => choose(road)}>{t('suggest_confirm_local')}</button>
         </div>
       ))}
 
       {selected && (
         <div className="card" style={{ border: '1px solid var(--accent)' }}>
           <b>{selected.road_code}</b>
-          <input className="text-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Local/common road name" maxLength={200} />
+          <input className="text-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('local_road_name_ph')} maxLength={200} />
           <select className="text-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-            <option value="en">English</option><option value="as">Assamese</option><option value="hi">Hindi</option><option value="local">Local language</option>
+            <option value="en">{t('english')}</option><option value="as">{t('assamese')}</option><option value="hi">{t('hindi')}</option><option value="local">{t('local_language')}</option>
           </select>
-          <input className="text-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Landmark or why this name is used (optional)" maxLength={300} />
-          <button className="btn btn-primary" onClick={submit}>Submit for Verification</button>
-          <button className="btn" onClick={() => setSelected(null)}>Cancel</button>
+          <input className="text-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('road_landmark_ph')} maxLength={300} />
+          <button className="btn btn-primary" onClick={submit}>{t('submit_verification')}</button>
+          <button className="btn" onClick={() => setSelected(null)}>{t('cancel')}</button>
         </div>
       )}
 
       {role === 'authority' && (
         <>
-          <div className="section-title" style={{ marginTop: 18 }}>Authority Verification Queue</div>
-          {queue.length === 0 && <div className="card">No pending road-name submissions.</div>}
+          <div className="section-title" style={{ marginTop: 18 }}>{t('authority_verification_queue')}</div>
+          {queue.length === 0 && <div className="card">{t('no_pending_submissions')}</div>}
           {queue.map((item) => (
             <div className="card" key={item.id} style={{ cursor: 'default' }}>
               <b>{item.road_code}</b> · {item.submitted_name}
               <div className="status-line">{item.same_name_votes} matching submission(s) · {item.unique_passers} unique traveller(s) · {item.submitted_by || 'User'}</div>
               {item.note && <div style={{ marginTop: 4 }}>{item.note}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button className="btn btn-primary" onClick={() => review(item.id, true)}>✓ Verify & Activate</button>
-                <button className="btn" onClick={() => review(item.id, false)}>Reject</button>
+                <button className="btn btn-primary" onClick={() => review(item.id, true)}>{t('verify_activate')}</button>
+                <button className="btn" onClick={() => review(item.id, false)}>{t('reject')}</button>
               </div>
             </div>
           ))}

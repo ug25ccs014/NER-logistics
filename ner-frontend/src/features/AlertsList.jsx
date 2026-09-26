@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 export default function AlertsList() {
   const [alerts, setAlerts] = useState([]);
   const [error, setError] = useState(null);
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
 
   useEffect(() => {
     const load = () => api.alerts(lang).then(setAlerts).catch((err) => setError(err.message));
@@ -16,9 +16,9 @@ export default function AlertsList() {
 
   return (
     <div>
-      <div className="section-title">Active Alerts ({alerts.length})</div>
+      <div className="section-title">{t('active_alerts')} ({alerts.length})</div>
       {error && <div className="status-line">{error}</div>}
-      {!error && alerts.length === 0 && <div className="status-line">No active alerts.</div>}
+      {!error && alerts.length === 0 && <div className="status-line">{t('no_active_alerts')}</div>}
       {alerts.map((a) => (
         <div className="card" key={a.id} style={{ cursor: 'default' }}>
           <b>{a.segment_name}</b>

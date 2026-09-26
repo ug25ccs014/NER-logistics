@@ -1,9 +1,11 @@
 import React from 'react';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import MapView from './MapView.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 export default function Workspace() {
   const { activeTool, goHome, goBack, canGoBack } = useNavigation();
+  const { t } = useLanguage();
   if (!activeTool) return null;
 
   const { Component, needsMap, label } = activeTool;
@@ -21,10 +23,10 @@ export default function Workspace() {
             type="button"
             className="workspace-back-btn"
             onClick={handleBack}
-            aria-label="Back to Dashboard"
-            title={canGoBack ? 'Back to previous tool' : 'Back to Dashboard'}
+            aria-label={t('workspace_back_dashboard')}
+            title={canGoBack ? t('workspace_back_previous') : t('workspace_back_dashboard')}
           >
-            ← {canGoBack ? 'Back' : 'Back to Dashboard'}
+            ← {canGoBack ? t('nav_back') : t('workspace_back_dashboard')}
           </button>
           <span>{label}</span>
         </div>

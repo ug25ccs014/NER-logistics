@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import L from 'leaflet';
 import { api, fetchRealRoutes } from '../api.js';
 import { useMap } from '../context/MapContext.jsx';
@@ -20,6 +21,7 @@ import {
 // those specific segments get swapped out for a weather-FORECAST
 // score at `departAt` instead of "right now", via GET /segments/forecast.
 export default function TripRiskForecast({ origin, dest, departAt }) {
+  const { t } = useLanguage();
   const { map } = useMap();
   const { segments } = useSegments();
 
@@ -41,7 +43,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
 
     async function run() {
       if (!map || !segments || !origin || !dest || !departAt) return;
-      setStatus('Finding the route...');
+      setStatus(t('finding_route'));
       setSummary(null);
       clearLayers();
 
@@ -49,7 +51,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
       try {
         routes = await fetchRealRoutes([origin.lon, origin.lat], [dest.lon, dest.lat]);
       } catch (err) {
-        if (!cancelled) setStatus(`Could not find a route: ${err.message}`);
+        if (!cancelled) setStatus(`${t('could_not_find_route')}: ${err.message}`);
         return;
       }
       const route = routes[0];
@@ -58,7 +60,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
       // Always draw the actual road route first. Forecasting is an overlay; a
       // weather/API failure must never make the route itself disappear.
       const baseLine = L.polyline(route.coords, { color: '#3b82f6', weight: 5, opacity: 0.85 }).addTo(map);
-      baseLine.bindPopup(`<b>Planned route</b><br/>${route.distanceKm.toFixed(1)} km · ~${Math.round(route.durationMin)} min`);
+      baseLine.bindPopup(`<b>${t('planned_route')}</b><br/>${route.distanceKm.toFixed(1)} km · ~${Math.round(route.durationMin)} min`);
       layersRef.current.push(baseLine);
 
       if (nearby.length === 0) {
@@ -71,7 +73,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         return;
       }
 
-      setStatus(`Checking live forecast across ${nearby.length} route sections...`);
+      setStatus(`${t('checking_forecast')} ${nearby.length} ${t('route_sections')}`);
       let forecastResp;
       try {
         // departAt is a local (IST) "YYYY-MM-DDTHH:mm:00" string -- the
@@ -79,7 +81,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         forecastResp = await api.forecastSegments(departAt, nearby.map((s) => s.id), Math.round(route.durationMin));
       } catch (err) {
         if (!cancelled) {
-          setStatus(`Forecast unavailable: ${err.message}`);
+          setStatus(`${t('forecast_unavailable')}: ${err.message}`);
           map.fitBounds(L.latLngBounds(route.coords), { padding: [50, 50] });
         }
         return;
@@ -103,10 +105,10 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
         line.bindPopup(
           chunk.segment
-            ? `<b>${chunk.segment.name}</b><br/>Forecast risk at section ETA: <b style="color:${chunk.color}">${
+            ? `<b>${chunk.segment.name}</b><br/>${t('forecast_eta')} <b style="color:${chunk.color}">${
                 chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
               }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
-            : 'No risk data for this stretch (unmonitored road)'
+            : t('popup_no_data')
         );
         layersRef.current.push(line);
       });
@@ -130,7 +132,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
   return (
     <div className="card" style={{ marginTop: 10 }}>
       <div className="section-title" style={{ marginTop: 0 }}>
-        Trip risk forecast -- departing {departLabel}
+        {t('forecast_departing').replace('{time}', departLabel)}
       </div>
       {status && <div className="status-line">{status}</div>}
       {summary && (
@@ -143,7 +145,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
               {summary.risk.level.toUpperCase()} risk expected (score {summary.risk.score}) across the route
             </div>
           ) : (
-            <div className="status-line">No monitored segment near this route -- can't forecast risk for it.</div>
+            <div className="status-line">{t('forecast_no_segment')}</div>
           )}
           {summary.forecastMeta && (
             <div className="status-line" style={{ marginTop: 4 }}>
@@ -158,7 +160,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
             return (
               <div key={s.id} style={{ fontSize: 12, padding: '7px 0', borderTop: '1px solid #333', marginTop: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span>{s.name_status === 'unnamed' ? 'Unnamed Road' : s.name}</span>
+                  <span>{s.name_status === 'unnamed' ? t('unnamed_road') : s.name}</span>
                   <span style={{ color: c, whiteSpace: 'nowrap' }}>{s.risk_level.toUpperCase()} ({s.risk_score})</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', color: '#aaa', marginTop: 5 }}>
@@ -210,7 +212,7 @@ function placeRiskMarkers(map, markersRef, chunks) {
     const midPos = midChunk.coords[Math.floor(midChunk.coords.length / 2)];
     const marker = L.marker(midPos, { icon }).addTo(map);
     marker.bindPopup(
-      `<b>${segment.name}</b><br/>Forecast risk: <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
+      `<b>${segment.name}</b><br/>{t('forecast_risk')} <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
         reasonsHtml(explainRisk(segment))
     );
     markersRef.current.push(marker);

@@ -544,3 +544,25 @@ html, body, #root {
 .road-name-actions { display: flex; gap: 8px; margin-top: 8px; }
 .road-name-actions .btn { margin: 0; }
 .road-name-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 2200; background: var(--panel); border: 1px solid var(--good); border-radius: 12px; padding: 13px 18px; box-shadow: 0 12px 30px rgba(0,0,0,.4); font-size: 13px; }
+
+/* Shared in-app language selector */
+.app-language {
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.app-language select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.app-language option { background: var(--panel); color: var(--text); }

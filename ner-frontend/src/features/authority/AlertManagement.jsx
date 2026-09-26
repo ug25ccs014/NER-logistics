@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { useSegments } from '../../context/SegmentsContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const ALERT_TYPES = [
   ['blocked_road', 'Blocked road'],
@@ -11,6 +12,7 @@ const ALERT_TYPES = [
 const SEVERITIES = [['info', 'Info'], ['warning', 'Warning'], ['critical', 'Critical']];
 
 export default function AlertManagement() {
+  const { t } = useLanguage();
   const { segments } = useSegments();
   const [alerts, setAlerts] = useState([]);
   const [error, setError] = useState(null);
@@ -29,7 +31,7 @@ export default function AlertManagement() {
 
   const publish = async () => {
     if (!segmentId || !message.trim()) {
-      alert('Choose a segment and enter a message.');
+      alert(t('alert_message_required'));
       return;
     }
     try {
@@ -55,25 +57,25 @@ export default function AlertManagement() {
     <div>
       <div className="section-title">Alert Management ({alerts.length} active)</div>
       {error && <div className="status-line">Failed to load alerts: {error}</div>}
-      {!error && alerts.length === 0 && <div className="status-line">No active alerts.</div>}
+      {!error && alerts.length === 0 && <div className="status-line">{t('no_active_alerts')}</div>}
       {alerts.map((a) => (
         <div className="card" key={a.id} style={{ cursor: 'default', borderLeft: `3px solid ${a.severity === 'critical' ? 'var(--danger)' : a.severity === 'warning' ? 'var(--warn)' : 'var(--accent)'}` }}>
           <b>{a.segment_name}</b>
           <div className="status-line">{a.message}</div>
           <div className="status-line">{(a.alert_type || '').replace(/_/g, ' ')} · source: {a.source || 'n/a'}</div>
           <button className="btn" style={{ background: '#3a3a4a', margin: '6px 0 0', fontSize: 11, padding: '5px 10px', width: 'auto' }} onClick={() => resolve(a.id)}>
-            Mark Resolved
+            {t('mark_resolved')}
           </button>
         </div>
       ))}
 
       <button className="btn" style={{ background: '#3a3a4a' }} onClick={() => setFormOpen((v) => !v)}>
-        + Create Manual Alert
+        {t('create_manual_alert')}
       </button>
       {formOpen && (
         <div style={{ marginTop: 8 }}>
           <select className="text-input" value={segmentId} onChange={(e) => setSegmentId(e.target.value)}>
-            <option value="">Select a road segment...</option>
+            <option value="">{t('select_segment')}</option>
             {sortedSegments.map((f) => (
               <option key={f.properties.id} value={f.properties.id}>{f.properties.name}</option>
             ))}
@@ -85,7 +87,7 @@ export default function AlertManagement() {
             {SEVERITIES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
           <textarea className="text-input" rows={2} placeholder="Alert message..." value={message} onChange={(e) => setMessage(e.target.value)} />
-          <button className="btn btn-primary" onClick={publish}>Publish Alert</button>
+          <button className="btn btn-primary" onClick={publish}>{t('publish_alert')}</button>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useChat, roleLabel } from '../context/ChatContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const QUICK_REPLIES = [
   '🆘 I need help',
@@ -13,6 +14,7 @@ const QUICK_REPLIES = [
 ];
 
 export default function ChatPanel() {
+  const { t } = useLanguage();
   const { sessionId, name, setName } = useAuth();
   const { partner, closeChat, chatRole } = useChat();
   const [messages, setMessages] = useState([]);
@@ -87,7 +89,7 @@ export default function ChatPanel() {
       </div>
 
       <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {messages.length === 0 && <div className="status-line">No messages yet -- say hello, or use a quick reply below.</div>}
+        {messages.length === 0 && <div className="status-line">{t('chat_no_messages')}</div>}
         {messages.map((m, i) => {
           const mine = m.from_session_id === sessionId;
           const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
@@ -124,7 +126,7 @@ export default function ChatPanel() {
         <input
           className="text-input"
           style={{ flex: 1, marginBottom: 0 }}
-          placeholder="Type a message..."
+          placeholder="{t('chat_type_message')}"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendFromInput()}

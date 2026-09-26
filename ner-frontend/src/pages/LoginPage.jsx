@@ -6,16 +6,13 @@ import { useAuth, APP_ROLE_TO_ACCOUNT_ROLE, ROLE_LABELS } from '../context/AuthC
 import { useLanguage, LANGUAGES } from '../context/LanguageContext.jsx';
 import '../styles/landing.css';
 
-// Roles that need the extra org passkey to register as -- mirrors
-// api/auth.py's PRIVILEGED_ROLES, expressed in the app's own role
-// spelling (field_reporter, not field_official).
 const PRIVILEGED_APP_ROLES = new Set(['field_reporter', 'authority']);
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { lang, setLang, t } = useLanguage();
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState('login');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -27,145 +24,63 @@ export default function LoginPage() {
   const needsPasskey = mode === 'register' && PRIVILEGED_APP_ROLES.has(role);
 
   const submit = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+    e.preventDefault(); setError(null); setBusy(true);
     try {
       const result = mode === 'login'
         ? await api.login(phone.trim(), password)
-        : await api.register({
-            fullName: fullName.trim(),
-            phone: phone.trim(),
-            password,
-            role: APP_ROLE_TO_ACCOUNT_ROLE[role],
-            passkey: needsPasskey ? passkey.trim() : undefined,
-          });
+        : await api.register({ fullName: fullName.trim(), phone: phone.trim(), password,
+            role: APP_ROLE_TO_ACCOUNT_ROLE[role], passkey: needsPasskey ? passkey.trim() : undefined });
       login({ ...result, phone: phone.trim() });
       navigate('/app', { replace: true });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
   };
+
+  const roleLabelKey = { driver: 'role_driver', field_reporter: 'role_field_official', authority: 'role_authority' };
 
   return (
     <div className="auth-page">
-      <div className="landing-terrain" />
-      <div className="landing-glow" />
+      <div className="auth-backdrop" />
+      <div className="auth-layout">
+        <motion.div className="auth-visual" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .7 }}>
+          <Link to="/" className="brand-lockup auth-brand">
+            <span className="brand-mark">NER</span><span><strong>{t('brand_name')}</strong><small>ACCESSIBILITY INTELLIGENCE</small></span>
+          </Link>
+          <div className="auth-visual-copy">
+            <div className="eyebrow"><span className="pulse-dot" /> AI + GIS / FIELD NETWORK</div>
+            <h1>{lang === 'en' ? 'Move through the region with better road intelligence.' : t('hero_title_start')}</h1>
+            <p>{t('hero_desc')}</p>
+          </div>
+          <div className="auth-route-visual"><span /><i /><b /><em /></div>
+          <div className="auth-meta"><span>LIVE NETWORK</span><span>•</span><span>ROAD RISK</span><span>•</span><span>FIELD REPORTS</span></div>
+        </motion.div>
 
-      <select
-        className="landing-lang-select auth-lang-select"
-        value={lang}
-        onChange={(e) => setLang(e.target.value)}
-        title="Language / भाषा / ভাষা"
-      >
-        {LANGUAGES.map(([code, label]) => (
-          <option key={code} value={code}>{label}</option>
-        ))}
-      </select>
+        <motion.div className="auth-card" initial={{ opacity: 0, y: 24, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: .55, delay: .08 }}>
+          <div className="auth-card-top">
+            <span className="auth-mini-label">{mode === 'login' ? '01 / ACCESS' : '02 / REGISTER'}</span>
+            <label className="language-control auth-language"><span>文</span><select value={lang} onChange={(e) => setLang(e.target.value)}>{LANGUAGES.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</select></label>
+          </div>
+          <h2>{t(mode === 'login' ? 'login_title' : 'register_title')}</h2>
+          <p className="auth-sub">{t('brand_name')} · North Eastern Region</p>
 
-      <motion.div
-        className="auth-card"
-        initial={{ opacity: 0, y: 20, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-      >
-        <h2>🛣️ {t('brand_name')}</h2>
-        <p className="auth-sub">
-          {mode === 'login' ? t('login_title') : t('register_title')}
-        </p>
-
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
-            onClick={() => { setMode('login'); setError(null); }}
-          >
-            {t('sign_in')}
-          </button>
-          <button
-            type="button"
-            className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
-            onClick={() => { setMode('register'); setError(null); }}
-          >
-            {t('create_account_tab')}
-          </button>
-        </div>
-
-        {error && <div className="auth-error">{error}</div>}
-
-        <form onSubmit={submit}>
-          {mode === 'register' && (
-            <div className="auth-field">
-              <label>{t('full_name')}</label>
-              <input
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder={t('full_name_ph')}
-              />
-            </div>
-          )}
-
-          <div className="auth-field">
-            <label>{t('phone_number')}</label>
-            <input
-              required
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="9xxxxxxxxx"
-            />
+          <div className="auth-tabs">
+            <button type="button" className={`auth-tab ${mode === 'login' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>{t('sign_in')}</button>
+            <button type="button" className={`auth-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => { setMode('register'); setError(null); }}>{t('create_account_tab')}</button>
           </div>
 
-          <div className="auth-field">
-            <label>{t('password')}</label>
-            <input
-              required
-              type="password"
-              minLength={mode === 'register' ? 8 : undefined}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? t('password_ph_register') : t('password_ph_login')}
-            />
-          </div>
+          {error && <div className="auth-error">{error}</div>}
 
-          {mode === 'register' && (
-            <div className="auth-field">
-              <label>{t('role_prompt')}</label>
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
-                {Object.entries(ROLE_LABELS).map(([v, label]) => (
-                  <option key={v} value={v}>{label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {needsPasskey && (
-            <>
-              <div className="auth-field">
-                <label>{t('passkey_label')}</label>
-                <input
-                  required
-                  value={passkey}
-                  onChange={(e) => setPasskey(e.target.value)}
-                  placeholder={t('passkey_ph')}
-                />
-              </div>
-              <div className="auth-passkey-note">
-                {t('passkey_note')}
-              </div>
-            </>
-          )}
-
-          <button className="auth-submit" type="submit" disabled={busy}>
-            {busy ? t('please_wait') : mode === 'login' ? t('sign_in') : t('create_account_tab')}
-          </button>
-        </form>
-
-        <Link to="/" className="auth-back">{t('back_to_home')}</Link>
-      </motion.div>
+          <form onSubmit={submit}>
+            {mode === 'register' && <div className="auth-field"><label>{t('full_name')}</label><input required value={fullName} onChange={e=>setFullName(e.target.value)} placeholder={t('full_name_ph')} /></div>}
+            <div className="auth-field"><label>{t('phone_number')}</label><input required type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="9xxxxxxxxx" /></div>
+            <div className="auth-field"><label>{t('password')}</label><input required type="password" minLength={mode === 'register' ? 8 : undefined} value={password} onChange={e=>setPassword(e.target.value)} placeholder={t(mode === 'register' ? 'password_ph_register' : 'password_ph_login')} /></div>
+            {mode === 'register' && <div className="auth-field"><label>{t('role_prompt')}</label><select value={role} onChange={e=>setRole(e.target.value)}>{Object.keys(ROLE_LABELS).map(v=><option key={v} value={v}>{t(roleLabelKey[v])}</option>)}</select></div>}
+            {needsPasskey && <><div className="auth-field"><label>{t('passkey_label')}</label><input required value={passkey} onChange={e=>setPasskey(e.target.value)} placeholder={t('passkey_ph')} /></div><div className="auth-passkey-note">{t('passkey_note')}</div></>}
+            <button className="auth-submit" type="submit" disabled={busy}>{busy ? t('please_wait') : mode === 'login' ? t('sign_in') : t('create_account_tab')} <span>→</span></button>
+          </form>
+          <Link to="/" className="auth-back">{t('back_to_home')}</Link>
+        </motion.div>
+      </div>
     </div>
   );
 }

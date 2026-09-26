@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 // Non-blocking prompt shown when normal GPS presence detects that the user
 // has actually travelled an unnamed/suggested road. It never appears while
 // the driver is required to interact with the map; naming can be skipped.
 export default function RoadNamingPrompt() {
+  const { t } = useLanguage();
   const { roadOpportunity, clearRoadOpportunity } = useLocationTracking();
   const [name, setName] = useState('');
   const [language, setLanguage] = useState('en');
@@ -41,48 +43,48 @@ export default function RoadNamingPrompt() {
   if (done) {
     return (
       <div className="road-name-toast">
-        ✓ Thanks — your road name suggestion was submitted for verification.
+        {t('road_name_submitted')}
       </div>
     );
   }
 
   return (
     <div className="road-name-prompt">
-      <div className="road-name-prompt-title">🛣️ Help map the NER</div>
+      <div className="road-name-prompt-title">{t('road_name_help')}</div>
       <div className="road-name-prompt-road">
-        You recently passed <b>{roadOpportunity.road_code}</b>, currently shown as an unnamed road.
+        {t('road_name_passed')} <b>{roadOpportunity.road_code}</b>, {t('road_name_unnamed')}
       </div>
       <div className="road-name-prompt-meta">
         {roadOpportunity.length_km ? `${roadOpportunity.length_km.toFixed(1)} km · ` : ''}
-        {roadOpportunity.unique_passers || 0} traveller(s) have passed this road.
+        {roadOpportunity.unique_passers || 0} {t('travellers_passed')}
       </div>
       <input
         className="text-input"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="What do locals call this road?"
+        placeholder={t('road_name_ph')}
         maxLength={200}
       />
       <div className="road-name-row">
         <select className="text-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-          <option value="en">English</option>
-          <option value="as">Assamese</option>
-          <option value="hi">Hindi</option>
-          <option value="local">Local language</option>
+          <option value="en">{t('english')}</option>
+          <option value="as">{t('assamese')}</option>
+          <option value="hi">{t('hindi')}</option>
+          <option value="local">{t('local_language')}</option>
         </select>
         <input
           className="text-input"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Optional landmark/context"
+          placeholder={t('road_name_note_ph')}
           maxLength={300}
         />
       </div>
       <div className="road-name-actions">
         <button className="btn btn-primary" onClick={submit} disabled={busy || !name.trim()}>
-          {busy ? 'Submitting…' : 'Submit Name'}
+          {busy ? 'Submitting…' : t('submit_name')}
         </button>
-        <button className="btn" onClick={clearRoadOpportunity} disabled={busy}>Not now</button>
+        <button className="btn" onClick={clearRoadOpportunity} disabled={busy}>{t('not_now')}</button>
       </div>
     </div>
   );
