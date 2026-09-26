@@ -15,14 +15,14 @@ export default function MapLegend() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3F7FD6', display: 'inline-block' }} />
         {t('map_no_data')}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span
           style={{
             width: 120, height: 10, borderRadius: 5, display: 'inline-block',
-            background: 'linear-gradient(90deg, #22c55e 0%, #eab308 35%, #f97316 65%, #dc2626 100%)',
+            background: 'linear-gradient(90deg, #2F9C84 0%, #F2C94C 35%, #F07C61 65%, #D9534F 100%)',
           }}
         />
         {t('map_low_severe')}

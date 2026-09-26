@@ -44,24 +44,24 @@ export default function LoginPage() {
       <div className="auth-layout">
         <motion.div className="auth-visual" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .7 }}>
           <Link to="/" className="brand-lockup auth-brand">
-            <span className="brand-mark">NER</span><span><strong>{t('brand_name')}</strong><small>ACCESSIBILITY INTELLIGENCE</small></span>
+            <span className="brand-mark">NER</span><span><strong>{t('brand_name')}</strong><small>{t('brand_tagline')}</small></span>
           </Link>
           <div className="auth-visual-copy">
-            <div className="eyebrow"><span className="pulse-dot" /> AI + GIS / FIELD NETWORK</div>
+            <div className="eyebrow"><span className="pulse-dot" /> {t('login_field_network')}</div>
             <h1>{lang === 'en' ? 'Move through the region with better road intelligence.' : t('hero_title_start')}</h1>
             <p>{t('hero_desc')}</p>
           </div>
           <div className="auth-route-visual"><span /><i /><b /><em /></div>
-          <div className="auth-meta"><span>LIVE NETWORK</span><span>•</span><span>ROAD RISK</span><span>•</span><span>FIELD REPORTS</span></div>
+          <div className="auth-meta"><span>{t('login_live_network')}</span><span>•</span><span>{t('login_road_risk')}</span><span>•</span><span>{t('login_field_reports')}</span></div>
         </motion.div>
 
         <motion.div className="auth-card" initial={{ opacity: 0, y: 24, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: .55, delay: .08 }}>
           <div className="auth-card-top">
-            <span className="auth-mini-label">{mode === 'login' ? '01 / ACCESS' : '02 / REGISTER'}</span>
+            <span className="auth-mini-label">{mode === 'login' ? t('login_access_label') : t('login_register_label')}</span>
             <label className="language-control auth-language"><span>文</span><select value={lang} onChange={(e) => setLang(e.target.value)}>{LANGUAGES.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</select></label>
           </div>
           <h2>{t(mode === 'login' ? 'login_title' : 'register_title')}</h2>
-          <p className="auth-sub">{t('brand_name')} · North Eastern Region</p>
+          <p className="auth-sub">{t('brand_name')} · {t('region_name')}</p>
 
           <div className="auth-tabs">
             <button type="button" className={`auth-tab ${mode === 'login' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>{t('sign_in')}</button>

@@ -16,7 +16,7 @@ function IdentityLayer() {
       style: (feature) => {
         const p = feature.properties || {};
         const unnamed = ['unnamed', 'suggested', 'community_supported'].includes(p.name_status);
-        return { color: unnamed ? '#eab308' : '#3b82f6', weight: unnamed ? 5 : 3, opacity: unnamed ? 0.9 : 0.65, dashArray: unnamed ? '7,6' : undefined };
+        return { color: unnamed ? '#F2C94C' : '#3F7FD6', weight: unnamed ? 5 : 3, opacity: unnamed ? 0.9 : 0.65, dashArray: unnamed ? '7,6' : undefined };
       },
       onEachFeature: (feature, layerItem) => {
         const p = feature.properties || {};
@@ -101,7 +101,7 @@ export default function RoadIdentity() {
         <div className="card" key={road.id} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
             <div><b>{road.name_status === 'unnamed' ? 'Unnamed Road' : road.name}</b><div className="status-line">{road.road_code} · {road.distance_km} km away</div></div>
-            <span style={{ color: '#eab308', fontSize: 12 }}>{road.name_status}</span>
+            <span style={{ color: '#F2C94C', fontSize: 12 }}>{road.name_status}</span>
           </div>
           <div className="status-line">{road.unique_passers} traveller(s) · {road.submission_count} name submission(s)</div>
           {road.suggested_name && <div style={{ marginTop: 5 }}>{t('suggested')} <b>{road.suggested_name}</b></div>}

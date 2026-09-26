@@ -4,7 +4,7 @@ import { useLanguage } from '../../context/LanguageContext.jsx';
 
 const STATUS_COLORS = {
   in_transit: 'var(--accent)',
-  delayed: '#f97316',
+  delayed: '#F07C61',
   planned: 'var(--muted)',
   completed: 'var(--good)',
 };
@@ -27,7 +27,7 @@ export default function TripsOversight() {
         <div className="card" key={idx} style={{ cursor: 'default' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <b>{t.registration_no || 'Unregistered vehicle'}</b>
-            <span style={{ background: STATUS_COLORS[t.status] || '#666', color: '#0f172a', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>
+            <span style={{ background: STATUS_COLORS[t.status] || '#666', color: '#18324A', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>
               {(t.status || '').replace(/_/g, ' ')}
             </span>
           </div>

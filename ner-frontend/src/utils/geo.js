@@ -23,7 +23,7 @@ const RISK_GRADIENT_STOPS = [
 ];
 
 export function getRiskColor(score, hasData = true) {
-  if (!hasData || score === null || score === undefined) return '#3b82f6';
+  if (!hasData || score === null || score === undefined) return '#3F7FD6';
   const s = Math.max(0, Math.min(100, score));
   for (let i = 0; i < RISK_GRADIENT_STOPS.length - 1; i++) {
     const [s0, c0] = RISK_GRADIENT_STOPS[i];
@@ -36,7 +36,7 @@ export function getRiskColor(score, hasData = true) {
       return `rgb(${r}, ${g}, ${b})`;
     }
   }
-  return '#dc2626';
+  return '#D9534F';
 }
 
 // n evenly-spaced points along a polyline's actual length (not just endpoints).

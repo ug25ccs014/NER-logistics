@@ -59,7 +59,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
 
       // Always draw the actual road route first. Forecasting is an overlay; a
       // weather/API failure must never make the route itself disappear.
-      const baseLine = L.polyline(route.coords, { color: '#3b82f6', weight: 5, opacity: 0.85 }).addTo(map);
+      const baseLine = L.polyline(route.coords, { color: '#3F7FD6', weight: 5, opacity: 0.85 }).addTo(map);
       baseLine.bindPopup(`<b>${t('planned_route')}</b><br/>${route.distanceKm.toFixed(1)} km · ~${Math.round(route.durationMin)} min`);
       layersRef.current.push(baseLine);
 

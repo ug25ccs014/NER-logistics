@@ -255,7 +255,7 @@ export default function LiveDashcamAI() {
       </div>
 
       {last && (
-        <div className={`ai-result-card ${alert ? 'is-alert' : ''}`} style={alert ? { borderColor: isEmergency ? '#dc2626' : '#f59e0b' } : undefined}>
+        <div className={`ai-result-card ${alert ? 'is-alert' : ''}`} style={alert ? { borderColor: isEmergency ? '#D9534F' : '#D99B21' } : undefined}>
           <div className="ai-result-top">
             <div>
               <div className="ai-hazard">{last.hazard === 'none' ? 'No hazard detected' : last.hazard.replaceAll('_', ' ')}</div>
@@ -272,7 +272,7 @@ export default function LiveDashcamAI() {
             <span>Road segment <b>{last.segment_name || 'none matched nearby'}</b></span>
           </div>
           {!last.alert_created && last.suppression_reason && (
-            <div className="ai-alert-created" style={{ color: '#f59e0b' }}>
+            <div className="ai-alert-created" style={{ color: '#D99B21' }}>
               {{
                 no_segment: last.nearest_segment_name
                   ? `⚠️ Nearest monitored road is "${last.nearest_segment_name}", ${last.nearest_segment_distance_km} km away -- too far for an alert (limit is 20 km). These GPS coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}) aren't near your road network's coverage area.`
@@ -284,7 +284,7 @@ export default function LiveDashcamAI() {
             </div>
           )}
           {last.alert_created && (
-            <div className="ai-alert-created" style={{ color: isEmergency ? '#dc2626' : '#f59e0b' }}>
+            <div className="ai-alert-created" style={{ color: isEmergency ? '#D9534F' : '#D99B21' }}>
               {isEmergency
                 ? '🚨 EMERGENCY alert created.'
                 : '⚠️ Medium-risk alert created.'}
@@ -316,7 +316,7 @@ export default function LiveDashcamAI() {
             </div>
             <span
               className={`ai-mini-score ${eventTier ? 'danger' : ''}`}
-              style={eventTier === 'emergency' ? { background: '#dc2626', color: 'white' } : eventTier === 'high_risk' ? { background: '#f59e0b', color: '#1a1a1a' } : undefined}
+              style={eventTier === 'emergency' ? { background: '#D9534F', color: 'white' } : eventTier === 'high_risk' ? { background: '#D99B21', color: '#18324A' } : undefined}
             >
               {Math.round(e.risk_score || 0)}
             </span>

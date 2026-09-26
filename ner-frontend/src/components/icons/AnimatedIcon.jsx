@@ -75,8 +75,8 @@ const ICONS = {
   alert: (
     <svg viewBox="0 0 48 48" className="anim-icon">
       <path className="icon-glow" d="M24 6 L44 40 H4 Z" fill="var(--warn)" opacity="0.9" />
-      <line x1="24" y1="20" x2="24" y2="29" stroke="#1e293b" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="24" cy="34" r="1.8" fill="#1e293b" />
+      <line x1="24" y1="20" x2="24" y2="29" stroke="#173A59" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="24" cy="34" r="1.8" fill="#173A59" />
     </svg>
   ),
   network: (
@@ -97,8 +97,8 @@ const ICONS = {
       <g className="icon-drive">
         <rect x="4" y="18" width="22" height="12" rx="2" fill="var(--panel-alt)" stroke="var(--border)" strokeWidth="2" />
         <path d="M26 21 h9 l6 6 v3 h-15 Z" fill="var(--panel-alt)" stroke="var(--border)" strokeWidth="2" />
-        <circle className="icon-wheel" cx="13" cy="32" r="4" fill="#1e293b" stroke="var(--muted)" strokeWidth="2" />
-        <circle className="icon-wheel" cx="33" cy="32" r="4" fill="#1e293b" stroke="var(--muted)" strokeWidth="2" />
+        <circle className="icon-wheel" cx="13" cy="32" r="4" fill="#173A59" stroke="var(--muted)" strokeWidth="2" />
+        <circle className="icon-wheel" cx="33" cy="32" r="4" fill="#173A59" stroke="var(--muted)" strokeWidth="2" />
       </g>
       <line x1="2" y1="38" x2="46" y2="38" stroke="var(--border)" strokeWidth="2" strokeDasharray="3 4" />
     </svg>

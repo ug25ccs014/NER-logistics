@@ -135,14 +135,6 @@ export const TOOLS_BY_ROLE = {
       Component: NearbyAccommodations,
     },
     {
-      id: 'shipments',
-      labelKey: 'tool_shipments_label',
-      descKey: 'tool_shipments_desc_reporter',
-      icon: 'box',
-      needsMap: true,
-      Component: ShipmentBoard,
-    },
-    {
       id: 'inbox',
       labelKey: 'tool_inbox_label',
       descKey: 'tool_inbox_desc_reporter',
@@ -169,14 +161,6 @@ export const TOOLS_BY_ROLE = {
   ],
 
   authority: [
-    {
-      id: 'ai-dashcam',
-      labelKey: 'tool_ai_dashcam_label',
-      descKey: 'tool_ai_dashcam_desc',
-      icon: 'alert',
-      needsMap: false,
-      Component: LiveDashcamAI,
-    },
     {
       id: 'network',
       labelKey: 'tool_network_label',

@@ -5,9 +5,9 @@ import L from 'leaflet';
 // Leaflet, which only exists in the browser.
 export function riskLevelIcon(level) {
   const style = {
-    moderate: { size: 18, bg: '#eab308', symbol: '!' },
-    high: { size: 24, bg: '#f97316', symbol: '⚠' },
-    severe: { size: 28, bg: '#dc2626', symbol: '⚠' },
+    moderate: { size: 18, bg: '#F2C94C', symbol: '!' },
+    high: { size: 24, bg: '#F07C61', symbol: '⚠' },
+    severe: { size: 28, bg: '#D9534F', symbol: '⚠' },
   }[level];
   if (!style) return null;
   return L.divIcon({
@@ -34,7 +34,7 @@ export function pulsingDotIcon() {
 export function simPositionIcon() {
   return L.divIcon({
     className: '',
-    html: `<div style="width:16px; height:16px; border-radius:50%; background:#3b82f6; border:2px solid white; box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+    html: `<div style="width:16px; height:16px; border-radius:50%; background:#3F7FD6; border:2px solid white; box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });

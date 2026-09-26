@@ -13,10 +13,10 @@ const FIELD_REPORT_EMOJI = {
 
 function reportIcon(report) {
   const emoji = FIELD_REPORT_EMOJI[report.report_type] || '❓';
-  const border = report.verified ? '#22c55e' : '#94a3b8';
+  const border = report.verified ? '#2F9C84' : '#9AA9B4';
   return L.divIcon({
     className: '',
-    html: `<div style="background:#1e293b; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid ${border}; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:15px;">${emoji}</div>`,
+    html: `<div style="background:#173A59; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid ${border}; box-shadow:0 1px 4px rgba(0,0,0,0.5); font-size:15px;">${emoji}</div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   });
@@ -84,7 +84,7 @@ const FieldReportsList = forwardRef(function FieldReportsList(_props, ref) {
     <div>
       <div className="section-title">{t('recent_field_reports_template').replace('{n}', reports.length)}</div>
       {pending > 0 && (
-        <div className="status-line" style={{ color: 'var(--warn, #f59e0b)' }}>
+        <div className="status-line" style={{ color: 'var(--warn, #D99B21)' }}>
           {t('reports_pending_sync_template').replace('{n}', pending)}
         </div>
       )}

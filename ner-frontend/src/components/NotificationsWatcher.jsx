@@ -48,7 +48,7 @@ export default function NotificationsWatcher() {
     markerRef.current = L.marker([n.lat, n.lon], {
       icon: L.divIcon({
         className: '',
-        html: `<div style="background:#1e293b; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #3b82f6; font-size:16px;">${n.from_role === 'field_official' ? '👮' : n.from_role === 'authority' ? '🏛️' : '🚚'}</div>`,
+        html: `<div style="background:#173A59; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #3F7FD6; font-size:16px;">${n.from_role === 'field_official' ? '👮' : n.from_role === 'authority' ? '🏛️' : '🚚'}</div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
       }),
@@ -62,7 +62,7 @@ export default function NotificationsWatcher() {
     <div
       style={{
         position: 'fixed', top: 76, right: 20, zIndex: 2050,
-        background: '#1e293b', border: '2px solid var(--accent)', borderRadius: 10,
+        background: '#173A59', border: '2px solid var(--accent)', borderRadius: 10,
         padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
       }}
     >
@@ -75,7 +75,7 @@ export default function NotificationsWatcher() {
         {n.lat && n.lon && (
           <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewOnMap}>{t('view_on_map_btn')}</button>
         )}
-        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#0f172a' }} onClick={chatWithSender}>{t('chat_btn')}</button>
+        <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#18324A' }} onClick={chatWithSender}>{t('chat_btn')}</button>
         <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={dismiss}>{t('dismiss_btn')}</button>
       </div>
     </div>

@@ -68,7 +68,7 @@ export default function ShipmentMatchesForRoute({ origin, dest }) {
       </div>
       <button
         className="btn"
-        style={{ background: 'var(--good)', color: '#0f172a', marginTop: 6, width: 'auto', padding: '4px 10px', fontSize: 12 }}
+        style={{ background: 'var(--good)', color: '#18324A', marginTop: 6, width: 'auto', padding: '4px 10px', fontSize: 12 }}
         onClick={() => contact(s.post)}
       >
         {t('contact_merge')}

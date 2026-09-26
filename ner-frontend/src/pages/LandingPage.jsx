@@ -29,7 +29,7 @@ export default function LandingPage() {
       <nav className="landing-nav">
         <Link to="/" className="brand-lockup">
           <span className="brand-mark">NER</span>
-          <span><strong>{t('brand_name')}</strong><small>ACCESSIBILITY INTELLIGENCE</small></span>
+          <span><strong>{t('brand_name')}</strong><small>{t('brand_tagline')}</small></span>
         </Link>
         <div className="landing-nav-right">
           <label className="language-control">
@@ -59,11 +59,11 @@ export default function LandingPage() {
             </div>
           </motion.div>
           <div className="hero-route-line"><span className="route-node node-a" /><span className="route-node node-b" /><span className="route-node node-c" /></div>
-          <div className="hero-scroll">SCROLL TO EXPLORE <span>↓</span></div>
+          <div className="hero-scroll">{t('landing_scroll')} <span>↓</span></div>
         </section>
 
         <section className="landing-section stats-section">
-          <div className="section-kicker">01 / NETWORK</div>
+          <div className="section-kicker">{t('landing_network_label')}</div>
           <div className="stats-row">
             {STATS.map(([label, value, suffix]) => (
               <div className="stat-block" key={label}>
@@ -76,13 +76,20 @@ export default function LandingPage() {
 
         <section id="features" className="landing-section feature-section">
           <div className="section-heading">
-            <div className="section-kicker">02 / PLATFORM</div>
+            <div className="section-kicker">{t('landing_platform_label')}</div>
             <h2>{t('features_heading')}</h2>
             <p>{t('features_sub')}</p>
           </div>
-          <div className="feature-story-image">
-            <div className="terrain-label"><span /> NORTHEAST INDIA / LIVE NETWORK</div>
-            <div className="terrain-route" />
+          <div className="feature-story-image" aria-label="Live Northeast logistics network visualization">
+            <div className="terrain-label"><span /> {t('landing_live_network')}</div>
+            <div className="terrain-route">
+              <i className="network-ping ping-a" />
+              <i className="network-ping ping-b" />
+              <i className="network-ping ping-c" />
+              <span className="network-vehicle">◆</span>
+            </div>
+            <div className="network-rain rain-a" /><div className="network-rain rain-b" /><div className="network-rain rain-c" />
+            <div className="network-legend"><span><i className="legend-dot safe"/> {t('landing_clear_corridor')}</span><span><i className="legend-dot watch"/> {t('landing_risk_watch')}</span><span><i className="legend-dot route"/> {t('landing_active_route')}</span></div>
           </div>
           <div className="feature-grid">
             {FEATURES.map(([titleKey, descKey, icon], i) => (
@@ -103,7 +110,7 @@ export default function LandingPage() {
           <div className="closing-image" />
           <div className="closing-overlay" />
           <div className="closing-content">
-            <div className="section-kicker">03 / OPERATE</div>
+            <div className="section-kicker">{t('landing_operate_label')}</div>
             <h2>{t('ready_heading')}</h2>
             <p>{t('ready_sub')}</p>
             <Link to="/login" className="btn-hero-primary">{t('sign_in_create')} <span>→</span></Link>
@@ -111,7 +118,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="landing-footer">{t('footer_text')} <span>•</span> AI + GIS • FIELD-FIRST</footer>
+      <footer className="landing-footer">{t('footer_text')} <span>•</span> {t('landing_ai_gis_field')}</footer>
     </div>
   );
 }

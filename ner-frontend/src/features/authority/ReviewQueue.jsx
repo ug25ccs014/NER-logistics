@@ -64,7 +64,7 @@ export default function ReviewQueue() {
           )}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             {!r.verified && (
-              <button className="btn" style={{ background: 'var(--good)', color: '#0f172a', margin: 0, fontSize: 12, padding: '6px 10px' }} onClick={() => verify(r.id)}>
+              <button className="btn" style={{ background: 'var(--good)', color: '#18324A', margin: 0, fontSize: 12, padding: '6px 10px' }} onClick={() => verify(r.id)}>
                 Verify
               </button>
             )}

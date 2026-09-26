@@ -19,7 +19,7 @@ export default function ChatMessageNotifyToast() {
     <div
       style={{
         position: 'fixed', top: 200, right: 20, zIndex: 2075,
-        background: '#1e293b', border: '2px solid var(--good)', borderRadius: 10,
+        background: '#173A59', border: '2px solid var(--good)', borderRadius: 10,
         padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
       }}
     >

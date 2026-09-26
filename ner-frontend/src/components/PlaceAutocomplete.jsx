@@ -63,7 +63,7 @@ export default function PlaceAutocomplete({ placeholder, value, onChange, onPick
             top: '100%',
             left: 0,
             right: 0,
-            background: '#1e293b',
+            background: '#173A59',
             border: '1px solid var(--border)',
             borderRadius: 8,
             zIndex: 10,
@@ -82,7 +82,7 @@ export default function PlaceAutocomplete({ placeholder, value, onChange, onPick
                 padding: '8px 10px',
                 fontSize: 13,
                 cursor: 'pointer',
-                background: i === activeIndex ? '#2d3d56' : 'transparent',
+                background: i === activeIndex ? '#2F6A8E' : 'transparent',
               }}
             >
               {s.display_name}

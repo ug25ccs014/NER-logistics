@@ -11,7 +11,7 @@ const STATUS_LABELS = {
 const STATUS_COLORS = {
   normal: 'var(--good)',
   watch: 'var(--warn)',
-  at_risk: '#f97316',
+  at_risk: '#F07C61',
   disrupted: 'var(--danger)',
 };
 
@@ -36,7 +36,7 @@ export default function DistrictStatus() {
             <span
               style={{
                 background: STATUS_COLORS[d.connectivity_status] || '#666',
-                color: '#0f172a',
+                color: '#18324A',
                 padding: '2px 8px',
                 borderRadius: 999,
                 fontSize: 11,

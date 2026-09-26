@@ -15,7 +15,7 @@ import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 
 function personIcon(role, status) {
   const emoji = role === 'field_official' ? '👮' : role === 'authority' ? '🏛️' : '🚚';
-  const bg = status === 'stuck' ? '#dc2626' : '#2563eb';
+  const bg = status === 'stuck' ? '#D9534F' : '#3F7FD6';
   return L.divIcon({
     className: '',
     html: `<div style="background:${bg}; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid white; font-size:16px;">${emoji}</div>`,
@@ -252,7 +252,7 @@ export default function LiveLocationSos() {
             </button>
             <button
               className="btn"
-              style={{ background: 'var(--good)', color: '#0f172a', margin: 0, width: 'auto', padding: '4px 10px', fontSize: 12 }}
+              style={{ background: 'var(--good)', color: '#18324A', margin: 0, width: 'auto', padding: '4px 10px', fontSize: 12 }}
               onClick={(e) => { e.stopPropagation(); openChat(d.session_id, d.driver_name, d.role); }}
             >
               {t('chat_btn')}
@@ -265,7 +265,7 @@ export default function LiveLocationSos() {
         <div
           style={{
             position: 'fixed', top: 76, right: 20, zIndex: 2000,
-            background: '#1e293b', border: '2px solid var(--danger)', borderRadius: 10,
+            background: '#173A59', border: '2px solid var(--danger)', borderRadius: 10,
             padding: 14, maxWidth: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
           }}
         >
@@ -277,7 +277,7 @@ export default function LiveLocationSos() {
           </div>
           <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button className="btn btn-primary" style={{ margin: 0 }} onClick={viewStuckOnMap}>{t('view_on_map_btn')}</button>
-            <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#0f172a' }} onClick={chatFromStuckAlert}>{t('chat_btn')}</button>
+            <button className="btn" style={{ margin: 0, background: 'var(--good)', color: '#18324A' }} onClick={chatFromStuckAlert}>{t('chat_btn')}</button>
             <button className="btn" style={{ margin: 0, background: '#3a3a4a' }} onClick={() => setStuckAlert(null)}>{t('dismiss_btn')}</button>
           </div>
         </div>

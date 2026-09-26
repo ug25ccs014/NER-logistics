@@ -99,8 +99,8 @@ export default function ChatPanel() {
               style={{
                 padding: '6px 10px', borderRadius: 12, maxWidth: '80%', fontSize: 13, wordWrap: 'break-word',
                 alignSelf: mine ? 'flex-end' : 'flex-start',
-                background: mine ? 'var(--good)' : '#334155',
-                color: mine ? '#0f172a' : 'var(--text)',
+                background: mine ? 'var(--good)' : '#245477',
+                color: mine ? '#18324A' : 'var(--text)',
               }}
             >
               {m.message}
@@ -115,7 +115,7 @@ export default function ChatPanel() {
           <button
             key={q}
             onClick={() => send(q)}
-            style={{ background: '#334155', color: 'var(--text)', border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+            style={{ background: '#245477', color: 'var(--text)', border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
           >
             {q}
           </button>
