@@ -51,10 +51,10 @@
 
 
 /* v5: landing feature zone returns to the earlier deep field-blue treatment. */
-.feature-section{position:relative;color:#EAF5F7;isolation:isolate}
-.feature-section:before{content:"";position:absolute;z-index:-2;left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);background:linear-gradient(135deg,#0B243A 0%,#173A59 52%,#0F5A64 100%)}
-.feature-section:after{content:"";position:absolute;z-index:-1;left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);opacity:.16;background-image:linear-gradient(rgba(255,255,255,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.14) 1px,transparent 1px);background-size:46px 46px;mask-image:linear-gradient(to bottom,#000,transparent 90%)}
-.feature-section .section-kicker{color:#A8C7D1}.feature-section .section-heading h2{color:#FFFFE3}.feature-section .section-heading p{color:#C5D8DF}
+.feature-section{position:relative;color:#18324A;isolation:isolate}
+.feature-section:before{content:"";position:absolute;z-index:-2;left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);background:#FFFFE3}
+.feature-section:after{content:"";position:absolute;z-index:-1;left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);background-image:linear-gradient(rgba(23,58,89,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(23,58,89,.045) 1px,transparent 1px);background-size:46px 46px;mask-image:linear-gradient(to bottom,#000,transparent 90%)}
+.feature-section .section-kicker{color:#3F7FD6}.feature-section .section-heading h2{color:#173A59}.feature-section .section-heading p{color:#526A7C}
 .feature-section .feature-card{background:rgba(7,25,40,.72);border-color:rgba(214,239,245,.14);box-shadow:0 18px 40px rgba(2,13,22,.22);backdrop-filter:blur(10px);color:#EDF8FA}
 .feature-section .feature-card:hover{background:rgba(11,37,57,.92);border-color:var(--feature-color);box-shadow:0 24px 48px rgba(2,13,22,.3)}
 .feature-section .feature-index{color:#88AAB7}.feature-section .feature-card h3{color:#FFFFE3}.feature-section .feature-card p{color:#B7CCD5}.feature-section .feature-arrow{color:var(--feature-color)}
