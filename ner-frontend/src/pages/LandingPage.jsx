@@ -1,24 +1,26 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useSpring } from 'framer-motion';
 import TiltCard from '../components/TiltCard.jsx';
 import Counter from '../components/Counter.jsx';
 import { useLanguage, LANGUAGES } from '../context/LanguageContext.jsx';
 import '../styles/landing.css';
 
+// Keys resolved through t() at render time, not literal copy -- so this
+// list re-translates automatically whenever the language changes.
 const FEATURES = [
-  { icon: '🗺️', title: 'Live Accessibility Map', desc: 'Real-time road, bridge, and district connectivity status across the North Eastern Region, updated as conditions change.' },
-  { icon: '🌧️', title: 'Disruption Prediction', desc: 'Rainfall and terrain-slope risk scoring flags landslide- and flood-prone stretches before they become impassable.' },
-  { icon: '🧭', title: 'Fastest vs Safest Routing', desc: 'AI-assisted alternate-route suggestions weigh real road geometry against current risk, not just distance.' },
-  { icon: '📍', title: 'Geo-tagged Field Reports', desc: 'Field officers and drivers upload photos and incident reports straight from the ground, even with no signal.' },
-  { icon: '🚚', title: 'GPS Cargo Tracking', desc: 'Live tracking for vehicles carrying medicine, food, construction material, and agricultural produce.' },
-  { icon: '🌐', title: 'Multilingual & Offline-first', desc: 'English, Hindi, and Assamese support, with field reports queued locally and synced once connectivity returns.' },
+  { icon: '🗺️', titleKey: 'feat_map_title', descKey: 'feat_map_desc' },
+  { icon: '🌧️', titleKey: 'feat_predict_title', descKey: 'feat_predict_desc' },
+  { icon: '🧭', titleKey: 'feat_route_title', descKey: 'feat_route_desc' },
+  { icon: '📍', titleKey: 'feat_field_title', descKey: 'feat_field_desc' },
+  { icon: '🚚', titleKey: 'feat_gps_title', descKey: 'feat_gps_desc' },
+  { icon: '🌐', titleKey: 'feat_offline_title', descKey: 'feat_offline_desc' },
 ];
 
 const STATS = [
-  { value: 12000, suffix: '+', label: 'Road segments mapped' },
-  { value: 3, label: 'Languages supported' },
-  { value: 24, suffix: '/7', label: 'Risk monitoring' },
+  { value: 12000, suffix: '+', labelKey: 'stat_segments' },
+  { value: 3, labelKey: 'stat_languages' },
+  { value: 24, suffix: '/7', labelKey: 'stat_monitoring' },
 ];
 
 const fadeUp = {
@@ -27,14 +29,18 @@ const fadeUp = {
 };
 
 export default function LandingPage() {
-  const { lang, setLang } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
+  const { scrollYProgress } = useScroll();
+  const scrollBar = useSpring(scrollYProgress, { stiffness: 120, damping: 24, mass: 0.2 });
 
   return (
     <div className="landing">
+      <motion.div className="scroll-progress" style={{ scaleX: scrollBar }} />
+      <div className="landing-terrain" />
       <div className="landing-glow" />
 
       <nav className="landing-nav">
-        <span className="brand">🛣️ NER Logistics Intelligence</span>
+        <span className="brand">🛣️ {t('brand_name')}</span>
         <div className="landing-nav-right">
           <select
             className="landing-lang-select"
@@ -46,7 +52,7 @@ export default function LandingPage() {
               <option key={code} value={code}>{label}</option>
             ))}
           </select>
-          <Link to="/login" className="cta-link">Sign in</Link>
+          <Link to="/login" className="cta-link">{t('sign_in')}</Link>
         </div>
       </nav>
 
@@ -56,18 +62,36 @@ export default function LandingPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease: 'easeOut' }}
       >
-        <span className="eyebrow">AI + GIS for North East India</span>
+        <span className="eyebrow">{t('eyebrow')}</span>
         <h1>
-          Keep essential goods moving through <span className="accent-text">India's toughest terrain</span>
+          {t('hero_title_start')} <span className="accent-text">{t('hero_title_accent')}</span>
         </h1>
-        <p>
-          A logistics accessibility platform that predicts road disruptions, tracks cargo,
-          and coordinates field reports in real time — built for the North Eastern Region's
-          landslides, floods, and low-connectivity zones.
-        </p>
+
+        {/* Signature move: a route being traced across the hero, the
+            one bespoke interaction unique to this page. Pure SVG/CSS,
+            no extra assets or libraries. */}
+        <svg className="hero-route" viewBox="0 0 600 60" preserveAspectRatio="none" aria-hidden="true">
+          <path
+            className="hero-route-track"
+            d="M0,45 C 90,10 150,50 220,28 C 300,2 360,44 430,22 C 490,4 540,30 600,14"
+          />
+          <path
+            className="hero-route-line"
+            d="M0,45 C 90,10 150,50 220,28 C 300,2 360,44 430,22 C 490,4 540,30 600,14"
+          />
+          <circle className="hero-route-dot" r="5">
+            <animateMotion
+              dur="6s"
+              repeatCount="indefinite"
+              path="M0,45 C 90,10 150,50 220,28 C 300,2 360,44 430,22 C 490,4 540,30 600,14"
+            />
+          </circle>
+        </svg>
+
+        <p>{t('hero_desc')}</p>
         <div className="hero-ctas">
-          <Link to="/login" className="btn-hero-primary">Get Started</Link>
-          <a href="#features" className="btn-hero-secondary">See how it works</a>
+          <Link to="/login" className="btn-hero-primary">{t('get_started')}</Link>
+          <a href="#features" className="btn-hero-secondary">{t('see_how')}</a>
         </div>
       </motion.header>
 
@@ -80,11 +104,11 @@ export default function LandingPage() {
       >
         <div className="stats-row">
           {STATS.map((s) => (
-            <div className="stat-block" key={s.label}>
+            <div className="stat-block" key={s.labelKey}>
               <span className="stat-number">
                 <Counter value={s.value} suffix={s.suffix || ''} />
               </span>
-              <span className="stat-label">{s.label}</span>
+              <span className="stat-label">{t(s.labelKey)}</span>
             </div>
           ))}
         </div>
@@ -97,16 +121,14 @@ export default function LandingPage() {
           viewport={{ once: true, margin: '-100px' }}
           variants={fadeUp}
         >
-          <h2>Everything a control room needs, in one place</h2>
-          <p className="section-sub">
-            Built around the North East's real operating conditions, not a generic logistics template.
-          </p>
+          <h2>{t('features_heading')}</h2>
+          <p className="section-sub">{t('features_sub')}</p>
         </motion.div>
 
         <div className="feature-grid">
           {FEATURES.map((f, i) => (
             <motion.div
-              key={f.title}
+              key={f.titleKey}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-60px' }}
@@ -115,8 +137,8 @@ export default function LandingPage() {
               <TiltCard>
                 <div className="feature-card-inner">
                   <div className="feature-icon">{f.icon}</div>
-                  <h3>{f.title}</h3>
-                  <p>{f.desc}</p>
+                  <h3>{t(f.titleKey)}</h3>
+                  <p>{t(f.descKey)}</p>
                 </div>
               </TiltCard>
             </motion.div>
@@ -132,13 +154,13 @@ export default function LandingPage() {
         viewport={{ once: true, margin: '-100px' }}
         variants={fadeUp}
       >
-        <h2>Ready to see the map?</h2>
-        <p className="section-sub">Sign in as a driver, field reporter, or authority to get started.</p>
-        <Link to="/login" className="btn-hero-primary">Sign in / Create account</Link>
+        <h2>{t('ready_heading')}</h2>
+        <p className="section-sub">{t('ready_sub')}</p>
+        <Link to="/login" className="btn-hero-primary">{t('sign_in_create')}</Link>
       </motion.section>
 
       <footer className="landing-footer">
-        NER Logistics Accessibility Intelligence Platform — built for the North Eastern Region.
+        {t('footer_text')}
       </footer>
     </div>
   );

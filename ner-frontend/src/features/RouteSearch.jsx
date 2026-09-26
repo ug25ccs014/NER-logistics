@@ -5,7 +5,25 @@ import { api, fetchRealRoutes, geocodePlace } from '../api.js';
 import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { riskLevelIcon } from '../utils/mapIcons.js';
+
+// {a} -> value in a template string, e.g. fill('{n} left', { n: 3 }).
+function fill(template, vars) {
+  return Object.entries(vars).reduce(
+    (str, [k, v]) => str.replace(`{${k}}`, v),
+    template
+  );
+}
+
+// segment.risk_level is a lowercase data value ('moderate', 'high'...);
+// this maps it to the translated word shown to a person.
+function riskLevelWord(t, level) {
+  if (!level) return t('risk_level_not_yet_scored');
+  const key = `risk_level_${level}`;
+  const word = t(key);
+  return word === key ? level.toUpperCase() : word;
+}
 import {
   findNearbyMonitoredSegments,
   computeRouteRiskChunks,
@@ -26,6 +44,7 @@ export default function RouteSearch({ onRouteFound }) {
   const { map } = useMap();
   const { segments, refresh: refreshSegments } = useSegments();
   const { setRouteCoords } = useActiveRoute();
+  const { t } = useLanguage();
 
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
@@ -48,7 +67,7 @@ export default function RouteSearch({ onRouteFound }) {
 
   const resolvePlace = async (text, picked) => {
     if (picked) return picked;
-    if (!text.trim()) throw new Error('Enter both From and To first.');
+    if (!text.trim()) throw new Error(t('err_enter_from_to'));
     return geocodePlace(text);
   };
 
@@ -67,7 +86,7 @@ export default function RouteSearch({ onRouteFound }) {
       const midPos = midChunk.coords[Math.floor(midChunk.coords.length / 2)];
       const marker = L.marker(midPos, { icon }).addTo(map);
       marker.bindPopup(
-        `<b>${segment.name_status === 'unnamed' ? 'Unnamed Road' : segment.name}</b><br/>Road ID: ${segment.road_code || '—'}<br/>Risk: <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
+        `<b>${segment.name_status === 'unnamed' ? 'Unnamed Road' : segment.name}</b><br/>Road ID: ${segment.road_code || '—'}<br/>${t('popup_risk_label')} <b>${riskLevelWord(t, segment.risk_level)}</b> (score ${segment.risk_score})` +
           reasonsHtml(explainRisk(segment))
       );
       riskMarkersRef.current.push(marker);
@@ -95,10 +114,10 @@ export default function RouteSearch({ onRouteFound }) {
           const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
           line.bindPopup(
             chunk.segment
-              ? `<b>${chunk.segment.name_status === 'unnamed' ? 'Unnamed Road' : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>Risk: <b style="color:${chunk.color}">${
-                  chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
+              ? `<b>${chunk.segment.name_status === 'unnamed' ? 'Unnamed Road' : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>${t('popup_risk_label')} <b style="color:${chunk.color}">${
+                  riskLevelWord(t, chunk.segment.risk_level)
                 }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
-              : 'No risk data for this stretch (unmonitored road)'
+              : t('popup_no_data')
           );
           routeLayersRef.current.push(line);
         });
@@ -120,7 +139,7 @@ export default function RouteSearch({ onRouteFound }) {
   };
 
   const search = async () => {
-    setStatus('Finding route...');
+    setStatus(t('status_finding_route'));
     setForecastStatus(null);
     // Refresh identity/risk data before each planned trip so a road name
     // verified by an authority is immediately used by the next route.
@@ -200,18 +219,18 @@ export default function RouteSearch({ onRouteFound }) {
 
   return (
     <div>
-      <div className="section-title">Search a Route (any location)</div>
+      <div className="section-title">{t('route_search_title')}</div>
       <PlaceAutocomplete
-        placeholder="From (e.g. Dimapur, Nagaland)"
+        placeholder={t('route_from_ph')}
         value={fromText}
         onChange={(text, picked) => { setFromText(text); setFromPlace(picked); }}
       />
       <PlaceAutocomplete
-        placeholder="To (e.g. Kohima, Nagaland)"
+        placeholder={t('route_to_ph')}
         value={toText}
         onChange={(text, picked) => { setToText(text); setToPlace(picked); }}
       />
-      <button className="btn btn-primary" onClick={search}>Find Route</button>
+      <button className="btn btn-primary" onClick={search}>{t('find_route_btn')}</button>
       {status && <div className="status-line">{status}</div>}
       {forecastStatus && <div className="status-line" style={{ marginTop: 5 }}>{forecastStatus}</div>}
 
@@ -222,6 +241,7 @@ export default function RouteSearch({ onRouteFound }) {
           index={i}
           selected={i === selectedIndex}
           onSelect={() => selectRoute(i)}
+          t={t}
         />
       ))}
 
@@ -239,9 +259,11 @@ function reasonsHtml(reasons) {
 
 // One row per contiguous stretch of the SAME segment (collapsed, same
 // logic as the map markers) -- matches the original's breakdown list.
-function RouteResultCard({ opt, index, selected, onSelect }) {
+function RouteResultCard({ opt, index, selected, onSelect, t }) {
   const { route, risk, nearbySegments, chunks } = opt;
-  const riskLabel = !risk.hasData ? 'No risk data (unmonitored road)' : `${risk.level.toUpperCase()} risk (score ${risk.score})`;
+  const riskLabel = !risk.hasData
+    ? t('risk_no_data')
+    : fill(t('risk_level_score_template'), { level: riskLevelWord(t, risk.level), score: risk.score });
   const riskMode = opt.forecasted ? 'LIVE FORECAST' : 'CURRENT ROAD DATA';
   const riskColor = getRiskColor(risk.score, risk.hasData);
 
@@ -262,10 +284,10 @@ function RouteResultCard({ opt, index, selected, onSelect }) {
       onClick={onSelect}
       style={{ border: selected ? '1px solid var(--accent)' : undefined }}
     >
-      <b>{selected ? '● ' : ''}Option {index + 1}{index === 0 ? ' (fastest)' : ''}</b> — {route.distanceKm.toFixed(1)} km · ~{Math.round(route.durationMin)} min
+      <b>{selected ? '● ' : ''}{t('option_prefix')} {index + 1}{index === 0 ? t('fastest_tag') : ''}</b> — {route.distanceKm.toFixed(1)} km · ~{Math.round(route.durationMin)} min
       <div style={{ color: riskColor, marginTop: 4 }}>
         {riskLabel} <span style={{ fontSize: 10, opacity: 0.75 }}>· {riskMode}</span>
-        {nearbySegments.length > 0 ? ` · passes ${nearbySegments.length} monitored segment(s)` : ''}
+        {nearbySegments.length > 0 ? ` · ${fill(t('passes_segments_template'), { n: nearbySegments.length })}` : ''}
       </div>
       {opt.forecastMeta && (
         <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
@@ -281,7 +303,7 @@ function RouteResultCard({ opt, index, selected, onSelect }) {
               <div key={i} style={{ fontSize: 12, padding: '3px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>{row.segment.name_status === 'unnamed' ? 'Unnamed Road' : row.segment.name}{row.segment.road_code ? ` · ${row.segment.road_code}` : ''}</span>
-                  <span style={{ color: c }}>{row.segment.risk_level ? row.segment.risk_level.toUpperCase() : 'N/A'} ({row.segment.risk_score})</span>
+                  <span style={{ color: c }}>{row.segment.risk_level ? riskLevelWord(t, row.segment.risk_level) : t('risk_level_na')} ({row.segment.risk_score})</span>
                 </div>
                 {reasons.length > 0 && <div style={{ color: '#999', marginTop: 2 }}>{reasons[0]}</div>}
               </div>

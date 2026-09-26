@@ -2,8 +2,16 @@ import React, { useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../context/MapContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { pulsingDotIcon, simPositionIcon } from '../utils/mapIcons.js';
 import { haversineKm } from '../utils/geo.js';
+
+function fill(template, vars) {
+  return Object.entries(vars).reduce(
+    (str, [k, v]) => str.replace(`{${k}}`, v),
+    template
+  );
+}
 
 // Ported from startRealRide() / startSimulatedRide() / stopRide().
 // "Start Ride" follows your actual device GPS (green pulsing dot);
@@ -12,6 +20,7 @@ import { haversineKm } from '../utils/geo.js';
 export default function RidePanel() {
   const { map } = useMap();
   const { routeCoords } = useActiveRoute();
+  const { t } = useLanguage();
   const [active, setActive] = useState(false);
   const [eta, setEta] = useState(null);
   const [distance, setDistance] = useState(null);
@@ -28,7 +37,7 @@ export default function RidePanel() {
     const dest = routeCoords[routeCoords.length - 1];
     const remainingKm = haversineKm(pos, dest);
     const etaMin = (remainingKm / 40) * 60;
-    setEta(etaMin < 1 ? 'Arrived' : Math.round(etaMin));
+    setEta(etaMin < 1 ? t('arrived_label') : Math.round(etaMin));
     setDistance(remainingKm.toFixed(1));
     setMode(modeLabel);
   };
@@ -79,11 +88,11 @@ export default function RidePanel() {
 
   const startRealRide = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation not supported in this browser.');
+      alert(t('geo_not_supported_alert'));
       return;
     }
     if (!window.isSecureContext) {
-      alert('Live GPS needs a secure connection (https, or localhost) -- most browsers block geolocation otherwise.');
+      alert(t('geo_needs_https_alert'));
       return;
     }
     stopRide();
@@ -96,9 +105,9 @@ export default function RidePanel() {
           realGpsMarkerRef.current.setLatLng(pos);
         }
         map.panTo(pos);
-        updatePanel(pos, '📍 Live GPS tracking (your real device location)');
+        updatePanel(pos, t('live_gps_mode_label'));
       },
-      (err) => alert(`Could not get your location: ${err.message}. Check that location permission is granted for this site.`),
+      (err) => alert(fill(t('geo_error_alert_template'), { err: err.message })),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
     setActive(true);
@@ -122,7 +131,7 @@ export default function RidePanel() {
         simMarkerRef.current.setLatLng(pos);
       }
       map.panTo(pos);
-      updatePanel(pos, '▶ Simulated ride (for demo purposes)');
+      updatePanel(pos, t('simulated_ride_mode_label'));
       i += Math.max(1, Math.floor(routeCoords.length / 200));
     }, stepEvery);
     setActive(true);
@@ -133,20 +142,20 @@ export default function RidePanel() {
       {!active ? (
         <>
           <button className="btn btn-ride" onClick={startRealRide} disabled={!routeCoords}>
-            📍 Start Ride (Live GPS)
+            {t('start_ride_btn')}
           </button>
           <button className="btn btn-sim" onClick={startSimulatedRide} disabled={!routeCoords}>
-            ▶ Simulate Ride (Demo)
+            {t('simulate_ride_btn')}
           </button>
         </>
       ) : (
-        <button className="btn btn-stop" onClick={stopRide}>⏹ Stop</button>
+        <button className="btn btn-stop" onClick={stopRide}>{t('stop_btn')}</button>
       )}
 
       {eta !== null && (
         <div className="ride-panel">
           <div className="big">{eta}</div>
-          <div className="status-line">min remaining · {distance} km left</div>
+          <div className="status-line">{fill(t('min_remaining_km_left_template'), { km: distance })}</div>
           <div className="status-line">{mode}</div>
         </div>
       )}

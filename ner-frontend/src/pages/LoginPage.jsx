@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../api.js';
 import { useAuth, APP_ROLE_TO_ACCOUNT_ROLE, ROLE_LABELS } from '../context/AuthContext.jsx';
+import { useLanguage, LANGUAGES } from '../context/LanguageContext.jsx';
 import '../styles/landing.css';
 
 // Roles that need the extra org passkey to register as -- mirrors
@@ -13,6 +14,7 @@ const PRIVILEGED_APP_ROLES = new Set(['field_reporter', 'authority']);
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { lang, setLang, t } = useLanguage();
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -49,16 +51,29 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+      <div className="landing-terrain" />
       <div className="landing-glow" />
+
+      <select
+        className="landing-lang-select auth-lang-select"
+        value={lang}
+        onChange={(e) => setLang(e.target.value)}
+        title="Language / भाषा / ভাষা"
+      >
+        {LANGUAGES.map(([code, label]) => (
+          <option key={code} value={code}>{label}</option>
+        ))}
+      </select>
+
       <motion.div
         className="auth-card"
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
       >
-        <h2>🛣️ NER Logistics Intelligence</h2>
+        <h2>🛣️ {t('brand_name')}</h2>
         <p className="auth-sub">
-          {mode === 'login' ? 'Sign in to your account' : 'Create an account to get started'}
+          {mode === 'login' ? t('login_title') : t('register_title')}
         </p>
 
         <div className="auth-tabs">
@@ -67,14 +82,14 @@ export default function LoginPage() {
             className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
             onClick={() => { setMode('login'); setError(null); }}
           >
-            Sign in
+            {t('sign_in')}
           </button>
           <button
             type="button"
             className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
             onClick={() => { setMode('register'); setError(null); }}
           >
-            Create account
+            {t('create_account_tab')}
           </button>
         </div>
 
@@ -83,18 +98,18 @@ export default function LoginPage() {
         <form onSubmit={submit}>
           {mode === 'register' && (
             <div className="auth-field">
-              <label>Full name</label>
+              <label>{t('full_name')}</label>
               <input
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Your name"
+                placeholder={t('full_name_ph')}
               />
             </div>
           )}
 
           <div className="auth-field">
-            <label>Phone number</label>
+            <label>{t('phone_number')}</label>
             <input
               required
               type="tel"
@@ -105,20 +120,20 @@ export default function LoginPage() {
           </div>
 
           <div className="auth-field">
-            <label>Password</label>
+            <label>{t('password')}</label>
             <input
               required
               type="password"
               minLength={mode === 'register' ? 8 : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? 'At least 8 characters' : 'Your password'}
+              placeholder={mode === 'register' ? t('password_ph_register') : t('password_ph_login')}
             />
           </div>
 
           {mode === 'register' && (
             <div className="auth-field">
-              <label>I am a...</label>
+              <label>{t('role_prompt')}</label>
               <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {Object.entries(ROLE_LABELS).map(([v, label]) => (
                   <option key={v} value={v}>{label}</option>
@@ -130,27 +145,26 @@ export default function LoginPage() {
           {needsPasskey && (
             <>
               <div className="auth-field">
-                <label>Organization passkey</label>
+                <label>{t('passkey_label')}</label>
                 <input
                   required
                   value={passkey}
                   onChange={(e) => setPasskey(e.target.value)}
-                  placeholder="Provided by your department"
+                  placeholder={t('passkey_ph')}
                 />
               </div>
               <div className="auth-passkey-note">
-                Field official and authority accounts need a passkey issued by your
-                department to prevent unverified sign-ups from getting elevated access.
+                {t('passkey_note')}
               </div>
             </>
           )}
 
           <button className="auth-submit" type="submit" disabled={busy}>
-            {busy ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
+            {busy ? t('please_wait') : mode === 'login' ? t('sign_in') : t('create_account_tab')}
           </button>
         </form>
 
-        <Link to="/" className="auth-back">← Back to home</Link>
+        <Link to="/" className="auth-back">{t('back_to_home')}</Link>
       </motion.div>
     </div>
   );
