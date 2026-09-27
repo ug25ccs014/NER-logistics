@@ -11,6 +11,19 @@ def get_connection():
         dbname=config.DB_NAME,
         user=config.DB_USER,
         password=config.DB_PASSWORD,
+        # Every request opens a brand-new connection (no pooling across
+        # serverless invocations), so on a suspended/scale-to-zero Neon
+        # branch this wait can legitimately take several seconds while
+        # compute wakes up. Without a timeout that wait was unbounded --
+        # a genuinely stuck TCP connection (bad host, network blip)
+        # would hang until Vercel's own function timeout killed it,
+        # which is what "Please wait..." sitting there for a long time
+        # usually is. 10s is generous for a real Neon cold-start but
+        # still fails fast and clearly if the connection is just dead.
+        connect_timeout=10,
+        # Neon requires SSL; being explicit here means this doesn't
+        # depend on libpq's default negotiation behavior.
+        sslmode="require",
     )
 
 

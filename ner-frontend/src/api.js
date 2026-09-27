@@ -25,6 +25,17 @@ async function request(path, options = {}) {
   } catch (err) {
     throw new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
   }
+  if (res.status === 401 && token) {
+    // The token itself was rejected (expired, or signed with an old
+    // JWT_SECRET after a redeploy) -- not a wrong password, since that's
+    // a 401 with no token attached in the first place (see /auth/login).
+    // Every other feature was individually catching this and showing
+    // its own confusing error, with nothing actually telling the person
+    // to log in again -- that's what "the page becomes stale" was: a
+    // dead session with no visible sign of why nothing works anymore.
+    clearSessionAndReload();
+    throw new Error('Your session expired -- signing you out.');
+  }
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { /* not JSON */ }
@@ -32,6 +43,12 @@ async function request(path, options = {}) {
   }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
+}
+
+function clearSessionAndReload() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  if (typeof window !== 'undefined') window.location.reload();
 }
 
 // Same auth + error handling as request(), but for multipart/form-data
@@ -45,6 +62,10 @@ async function uploadRequest(path, formData) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
+  if (res.status === 401 && token) {
+    clearSessionAndReload();
+    throw new Error('Your session expired -- signing you out.');
+  }
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { /* not JSON */ }
