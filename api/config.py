@@ -94,6 +94,15 @@ FORECAST_GRID_SIZE_DEG = float(os.getenv("FORECAST_GRID_SIZE_DEG", "0.10"))
 # Keep a conservative live-forecast planning horizon. Open-Meteo supports
 # longer horizons, but forecast confidence decreases as the trip moves farther out.
 FORECAST_MAX_HOURS_AHEAD = int(os.getenv("FORECAST_MAX_HOURS_AHEAD", "360"))
+# How long a fetched weather-grid-cell response stays reusable across
+# requests. Route & Ride requests a forecast once per alternative route in
+# parallel, and each of those requests fans out to one call per distinct
+# grid cell -- without a shared cache, a single search can burst 15-25+
+# simultaneous outbound calls to Open-Meteo and trip its rate limit (429),
+# which is what previously surfaced as "Weather forecast request failed".
+FORECAST_CACHE_TTL_SECONDS = int(os.getenv("FORECAST_CACHE_TTL_SECONDS", "300"))
+# Retries specifically for 429 (rate limited) responses, with backoff.
+FORECAST_RATE_LIMIT_RETRIES = int(os.getenv("FORECAST_RATE_LIMIT_RETRIES", "3"))
 # Same rule_v1 weights/thresholds as risk_engine/config.py, duplicated
 # here for the same reason as risk_model.py itself -- keep the two in
 # sync if you ever retune the model.
