@@ -53,17 +53,29 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def _save_report_photo(photo_base64: str) -> str:
-    """Decode a base64 (optionally data:-URL-prefixed) image and save it.
-    Returns the relative URL path to store in field_reports.photo_url."""
+    """Validate a base64 (optionally data:-URL-prefixed) image and return
+    a data: URL to store directly in field_reports.photo_url.
+
+    This used to write the decoded bytes to a file under UPLOAD_DIR and
+    return a relative /uploads/<file> path. That works locally, but a
+    Vercel serverless deployment's own filesystem is read-only at
+    runtime (only /tmp is writable, and even /tmp isn't shared or
+    guaranteed to persist between invocations) -- so every report
+    submitted WITH a photo threw an unhandled OSError on write, which
+    is what surfaced to the browser as "Cannot reach the FastAPI
+    backend" (an unhandled exception's response doesn't carry the
+    app's own CORS headers, so the browser reports it as a plain
+    network failure rather than a proper error). Storing the photo as
+    a data: URL sidesteps needing any writable disk at all. photo_url
+    is a TEXT column with no length limit, so a few hundred KB of
+    base64 text is fine; swap this for S3/GCS + a CDN URL before this
+    needs to handle real production photo volume."""
     raw = photo_base64.split(",", 1)[1] if photo_base64.startswith("data:") else photo_base64
     try:
-        image_bytes = base64.b64decode(raw, validate=True)
+        base64.b64decode(raw, validate=True)
     except (binascii.Error, ValueError):
         raise ValueError("photo_base64 is not valid base64 image data")
-    filename = f"{uuid.uuid4().hex}.jpg"
-    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
-        f.write(image_bytes)
-    return f"/uploads/{filename}"
+    return photo_base64 if photo_base64.startswith("data:") else f"data:image/jpeg;base64,{raw}"
 
 
 class FieldReportIn(BaseModel):

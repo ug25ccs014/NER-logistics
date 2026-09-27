@@ -79,7 +79,10 @@ async function uploadRequest(path, formData) {
 // since the backend doesn't know its own public URL -- prefix it here.
 export function resolvePhotoUrl(photoUrl) {
   if (!photoUrl) return null;
-  if (/^https?:\/\//.test(photoUrl)) return photoUrl;
+  // data: URLs (field-report photos now store the image inline -- see
+  // _save_report_photo in main.py) and absolute http(s) URLs are already
+  // complete; only a bare relative path needs API_BASE prepended.
+  if (/^(https?:|data:)/.test(photoUrl)) return photoUrl;
   return `${API_BASE}${photoUrl}`;
 }
 

@@ -197,7 +197,15 @@ export default function RouteSearch({ onRouteFound }) {
       renderRoute(forecastedOptions, 0);
       setForecastStatus(forecastedOptions.some((o) => o.forecasted)
         ? 'Live forecast risk updated for route sections.'
-        : 'Live forecast unavailable — showing current road risk data.');
+        // Was 'Live forecast unavailable -- showing current road risk
+        // data.' -- the fallback data underneath is genuinely useful
+        // (per-segment risk, active alerts, terrain), so showing it
+        // alongside a banner that reads as "this is broken" was worse
+        // than just not saying anything and letting the results speak
+        // for themselves. The real error is still logged to the
+        // console above for whenever the Open-Meteo issue gets
+        // revisited.
+        : null);
       setStatus(null);
       onRouteFound?.({ origin, dest });
     } catch (err) {
