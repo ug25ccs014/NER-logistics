@@ -1,30 +1,42 @@
 import psycopg2
 import psycopg2.extras
 import uuid
+import time
 import config
 
 
 def get_connection():
-    return psycopg2.connect(
-        host=config.DB_HOST,
-        port=config.DB_PORT,
-        dbname=config.DB_NAME,
-        user=config.DB_USER,
-        password=config.DB_PASSWORD,
-        # Every request opens a brand-new connection (no pooling across
-        # serverless invocations), so on a suspended/scale-to-zero Neon
-        # branch this wait can legitimately take several seconds while
-        # compute wakes up. Without a timeout that wait was unbounded --
-        # a genuinely stuck TCP connection (bad host, network blip)
-        # would hang until Vercel's own function timeout killed it,
-        # which is what "Please wait..." sitting there for a long time
-        # usually is. 10s is generous for a real Neon cold-start but
-        # still fails fast and clearly if the connection is just dead.
-        connect_timeout=10,
-        # Neon requires SSL; being explicit here means this doesn't
-        # depend on libpq's default negotiation behavior.
-        sslmode="require",
-    )
+    """Every request opens a brand-new connection (no pooling across
+    serverless invocations). On Neon's free tier, compute suspends after
+    a few idle minutes, so the first request after any gap has to wait
+    for it to wake up *in addition to* the normal connection handshake --
+    that wake-up occasionally takes just long enough to trip a single
+    attempt, which is what "the API is sometimes just not there" usually
+    is: not actually down, just caught mid-wake-up with no retry to ride
+    it out. One retry after a short pause covers the large majority of
+    those; a second real failure means something is actually wrong."""
+    last_exc = None
+    for attempt, backoff in enumerate((0, 1.5)):
+        if backoff:
+            time.sleep(backoff)
+        try:
+            return psycopg2.connect(
+                host=config.DB_HOST,
+                port=config.DB_PORT,
+                dbname=config.DB_NAME,
+                user=config.DB_USER,
+                password=config.DB_PASSWORD,
+                # Generous enough for a real Neon cold-start, but still
+                # fails clearly (rather than hanging until Vercel's own
+                # function timeout kills it) if the connection is just dead.
+                connect_timeout=10,
+                # Neon requires SSL; explicit here so this doesn't depend
+                # on libpq's default negotiation behavior.
+                sslmode="require",
+            )
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+    raise last_exc
 
 
 def fetch_field_reports(limit=50, include_resolved=False):

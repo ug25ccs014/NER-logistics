@@ -150,8 +150,19 @@ export default function RouteSearch({ onRouteFound }) {
       // risk shown here is not just the static database risk.
       setForecastStatus('Checking live weather along the route...');
       const departAt = localIsoMinute(new Date());
-      const forecastedOptions = await Promise.all(baseOptions.map(async (opt) => {
-        if (opt.nearbySegments.length === 0) return opt;
+      // Was Promise.all -- every route option (each internally touching
+      // several weather grid cells) fired at once, so a route with e.g.
+      // 3 options could burst 10+ concurrent requests at Open-Meteo in
+      // the same instant. Open-Meteo's free tier rate-limits by burst,
+      // not just daily total, and that's exactly what was tripping the
+      // 429s -- sequential awaits spread the same total work out instead
+      // of firing it all in one spike.
+      const forecastedOptions = [];
+      for (const opt of baseOptions) {
+        if (opt.nearbySegments.length === 0) {
+          forecastedOptions.push(opt);
+          continue;
+        }
         try {
           const forecast = await api.forecastSegments(
             departAt,
@@ -163,23 +174,23 @@ export default function RouteSearch({ onRouteFound }) {
             const f = byId.get(seg.id);
             return f ? { ...seg, ...f } : seg;
           });
-          return {
+          forecastedOptions.push({
             ...opt,
             nearbySegments,
             risk: scoreRouteRisk(nearbySegments),
             chunks: computeRouteRiskChunks(opt.route.coords, nearbySegments),
             forecasted: true,
             forecastMeta: forecast,
-          };
+          });
         } catch (err) {
           // Keep the route usable if weather service is temporarily
           // unavailable -- but log why, instead of silently falling back
           // with no trace. Check the browser console for this the next
           // time "Live forecast unavailable" shows up.
           console.error('Forecast failed for route option, falling back to current road data:', err);
-          return opt;
+          forecastedOptions.push(opt);
         }
-      }));
+      }
 
       setRouteOptions(forecastedOptions);
       setSelectedIndex(0);

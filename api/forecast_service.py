@@ -9,9 +9,8 @@ between now and arrival (useful for wet/unstable mountain roads).
 The provider is server-side only; no weather key is required for the normal
 non-commercial Open-Meteo endpoint.
 """
-import threading
-import time
 from datetime import datetime, timedelta, timezone
+import time
 import requests
 import config
 
@@ -19,32 +18,6 @@ BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 class ForecastUnavailable(Exception):
     pass
-
-
-# Shared across requests within this process (not just within a single
-# forecast call). Route & Ride requests a forecast per alternative route in
-# parallel, and repeat searches for the same area happen constantly -- a
-# short-lived cache here means most of those calls are served from memory
-# instead of re-hitting Open-Meteo, which is what was tripping the
-# provider's rate limit and surfacing as "Weather forecast request failed".
-_grid_cache_lock = threading.Lock()
-_grid_cache = {}  # cell -> (fetched_at_monotonic, data)
-
-
-def _cache_get(cell):
-    with _grid_cache_lock:
-        entry = _grid_cache.get(cell)
-    if not entry:
-        return None
-    fetched_at, data = entry
-    if time.monotonic() - fetched_at > config.FORECAST_CACHE_TTL_SECONDS:
-        return None
-    return data
-
-
-def _cache_set(cell, data):
-    with _grid_cache_lock:
-        _grid_cache[cell] = (time.monotonic(), data)
 
 
 def max_forecastable_at() -> datetime:
@@ -90,45 +63,38 @@ def _fetch_open_meteo(lat, lon):
         "wind_speed_unit": "kmh",
         "precipitation_unit": "mm",
     }
-    attempts = max(1, config.FORECAST_RATE_LIMIT_RETRIES)
-    last_status = None
-    for attempt in range(attempts):
+    # Was 15s -- on a serverless function with a hard total time budget,
+    # one slow call at 15s could eat the whole thing by itself even with
+    # the other segments' cells fetched in parallel (see trip_forecast.py).
+    # 8s is still generous for Open-Meteo, which normally responds in
+    # well under a second.
+    last_exc = None
+    for attempt, backoff in enumerate((0, 1.5)):
+        if backoff:
+            time.sleep(backoff)
         try:
-            # Was 15s -- on a serverless function with a hard total time
-            # budget, one slow call at 15s could eat the whole thing by
-            # itself even with the other segments' cells fetched in parallel
-            # (see trip_forecast.py). 8s is still generous for Open-Meteo,
-            # which normally responds in well under a second.
             resp = requests.get(BASE_URL, params=params, timeout=8)
         except requests.exceptions.RequestException as exc:
             raise ForecastUnavailable(f"Weather forecast API call failed: {exc}") from exc
-
         if resp.status_code == 429:
-            # Rate limited -- this is the recurring failure mode: several
-            # route alternatives each fan out to several grid cells in
-            # parallel, and Open-Meteo throttles the burst. Back off and
-            # retry a couple of times before giving up, instead of failing
-            # the whole forecast on the first 429.
-            last_status = 429
-            if attempt < attempts - 1:
-                retry_after = resp.headers.get("Retry-After")
-                try:
-                    delay = float(retry_after) if retry_after else (0.5 * (attempt + 1))
-                except ValueError:
-                    delay = 0.5 * (attempt + 1)
-                time.sleep(min(delay, 3.0))
-                continue
-            raise ForecastUnavailable("Weather forecast request failed (429): rate limited, retries exhausted.")
-
+            # The free Open-Meteo endpoint rate-limits by request burst,
+            # not total daily volume, and a route search firing several
+            # concurrent segment/cell lookups at once (one route search
+            # can touch multiple grid cells, and Route & Ride forecasts
+            # every route option) can trip it even well under any daily
+            # cap. A couple of short retries clears this the large
+            # majority of the time; if it's still 429 after 3 tries,
+            # something upstream is actually rate-limiting us for real
+            # and this correctly surfaces as "forecast unavailable"
+            # rather than retrying forever.
+            last_exc = ForecastUnavailable(f"Weather forecast request failed ({resp.status_code}).")
+            continue
         if not resp.ok:
             raise ForecastUnavailable(f"Weather forecast request failed ({resp.status_code}).")
-        try:
-            data = resp.json()
-        except ValueError as exc:
-            raise ForecastUnavailable(f"Weather forecast API returned invalid JSON: {exc}") from exc
+        data = resp.json()
         break
     else:
-        raise ForecastUnavailable(f"Weather forecast request failed ({last_status}).")
+        raise last_exc
 
     if not data.get("hourly", {}).get("time"):
         raise ForecastUnavailable("Weather provider returned no hourly forecast for this location.")
@@ -159,20 +125,14 @@ def _fetch_openweather(lat, lon):
 
 
 def _fetch(lat, lon):
-    cell = _cell(lat, lon)
-    cached = _cache_get(cell)
-    if cached is not None:
-        return cached
     try:
-        data = _fetch_open_meteo(lat, lon)
+        return _fetch_open_meteo(lat, lon)
     except ForecastUnavailable as primary_error:
         # Keep the feature usable on networks where Open-Meteo is blocked.
         # OpenWeather is only used if the existing server-side key is present.
         if not config.OPENWEATHER_API_KEY:
             raise primary_error
-        data = _fetch_openweather(lat, lon)
-    _cache_set(cell, data)
-    return data
+        return _fetch_openweather(lat, lon)
 
 
 def _forecast_from_openweather(data, window_start_utc, window_end_utc):
