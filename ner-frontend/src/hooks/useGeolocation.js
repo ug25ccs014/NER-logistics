@@ -33,7 +33,13 @@ export function useGeolocation() {
           setLoading(false);
           reject(err);
         },
-        { enableHighAccuracy: true, timeout: 15000 }
+        // timeout was 15000 with no maximumAge (i.e. maximumAge: 0),
+        // which forces a brand-new GPS fix every single call and gives
+        // up quickly -- exactly the combination that throws "Timeout
+        // expired" indoors/under tree cover. Raised to 30s and now
+        // accepting a fix up to 20s old, matching the same fix already
+        // applied to RidePanel's live tracking.
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 20000 }
       );
     });
   }, [position]);

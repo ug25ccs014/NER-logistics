@@ -49,7 +49,20 @@ def score_segment(
     verified_hazard_reports=0,
     status="open",
     source=None,
+    **_extra_forecast_fields,
 ):
+    # trip_forecast.py calls this as score_segment(**weather, ...), and
+    # `weather` (from forecast_service.forecast_for_window) carries a few
+    # descriptive/display-only fields -- forecast_temperature_c,
+    # forecast_weather_code, forecast_soil_moisture, forecast_time,
+    # weather_model -- that this model doesn't score against. Without
+    # **_extra_forecast_fields above, any one of those raised
+    # `TypeError: score_segment() got an unexpected keyword argument`
+    # on every single call, which is why live forecasting was failing
+    # 100% of the time. They're intentionally unused here; add a named
+    # parameter (and fold it into the score below) if one of them
+    # should start affecting risk.
+
     # Weather: 50 points. The ETA hour is primary; pre-arrival rain matters for
     # saturated/landslide-prone ground, while probability and storms capture
     # forecast uncertainty and acute hazards.

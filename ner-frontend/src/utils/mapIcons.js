@@ -39,3 +39,21 @@ export function simPositionIcon() {
     iconAnchor: [8, 8],
   });
 }
+
+// Shared "here's where you are" marker for every feature that extracts
+// the user's current GPS position (Nearby Accommodations, SOS/nearby
+// help, Road Identity, ...). There is only one Leaflet map in this
+// app, so this is a module-level singleton rather than a per-feature
+// marker -- switching between tools moves the same blinking dot to
+// your latest known position instead of stacking up a new one per
+// tool you've visited.
+let _currentLocationMarker = null;
+export function placeCurrentLocationMarker(map, lat, lon) {
+  if (!map) return _currentLocationMarker;
+  if (_currentLocationMarker) {
+    _currentLocationMarker.setLatLng([lat, lon]);
+  } else {
+    _currentLocationMarker = L.marker([lat, lon], { icon: pulsingDotIcon(), zIndexOffset: 1000 }).addTo(map);
+  }
+  return _currentLocationMarker;
+}

@@ -178,6 +178,17 @@ button, input, select, textarea { font: inherit; }
 .ai-dashcam .card { cursor:default; margin-bottom:0; background:rgba(255,255,255,.96); color:#173A59; }
 .ai-dashcam .card:hover { transform:none; border-color:rgba(255,255,255,.75); }
 .ai-dashcam .card > b { color:#173A59; }
+
+/* Blinking "my current location" dot -- used by pulsingDotIcon() for
+   every feature that plots the user's own extracted GPS position on
+   the map (Route & Ride's live tracking, Nearby Accommodations, SOS/
+   nearby-help, Road Identity). Was referenced by mapIcons.js but had
+   no rules defined, so the marker rendered invisibly; this is the fix. */
+.live-dot { position:relative; width:18px; height:18px; }
+.live-dot .dot-core { position:absolute; inset:4px; border-radius:50%; background:#2F9C84; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+.live-dot .dot-pulse { position:absolute; inset:0; border-radius:50%; background:rgba(47,156,132,.55); animation:liveDotPulse 1.6s ease-out infinite; }
+@keyframes liveDotPulse { 0%{transform:scale(.5);opacity:.85} 100%{transform:scale(1.9);opacity:0} }
+
 .ai-dashcam .card .status-line { color:#617486; }
 .ai-mode-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:9px; }
 .ai-mode-row .btn { margin:0; }

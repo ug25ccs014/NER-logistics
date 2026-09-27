@@ -282,6 +282,9 @@ def fetch_segments_geojson():
             rs.has_bridge,
             rs.seasonal_restriction,
             rs.avg_slope_deg,
+            rs.road_code,
+            rs.name_status,
+            rs.suggested_name,
             latest_risk.risk_score,
             latest_risk.risk_level,
             latest_risk.rainfall_24h_mm,
@@ -320,6 +323,9 @@ def fetch_segments_geojson():
                 "has_bridge": row["has_bridge"],
                 "seasonal_restriction": row["seasonal_restriction"],
                 "avg_slope_deg": float(row["avg_slope_deg"]) if row["avg_slope_deg"] is not None else None,
+                "road_code": row["road_code"],
+                "name_status": row["name_status"],
+                "suggested_name": row["suggested_name"],
                 "risk_score": float(row["risk_score"]) if row["risk_score"] is not None else None,
                 "risk_level": row["risk_level"],  # null = never scored yet, not "low"
                 "rainfall_24h_mm": float(row["rainfall_24h_mm"]) if row["rainfall_24h_mm"] is not None else None,
@@ -1194,3 +1200,308 @@ def fetch_recent_ai_detections(limit=50):
         }
         for r in rows
     ]
+
+
+# --- Road Identity & community naming ---------------------------------
+#
+# Three moving parts, mirroring migration_004_road_identity.sql:
+#  - road_segments.name_status / road_code / suggested_name: persistent
+#    identity + naming state for a segment.
+#  - road_segment_passes: "this session actually drove this segment"
+#    observations, built up from ordinary /drivers/location pings.
+#  - road_name_submissions: naming suggestions, voted on by pass count
+#    and submission count, reviewed by an authority account.
+
+UNNAMED_STATUSES = ("unnamed", "suggested", "community_supported")
+
+# How close (meters) a ping has to be to a segment's line to count as
+# "on that road" rather than just near it as the crow flies.
+ROAD_PASS_MAX_DISTANCE_M = 80
+
+
+def record_road_pass(session_id, account_id, lat, lon):
+    """Called on every /drivers/location ping. If the ping is close
+    enough to an unnamed/suggested/community_supported segment, logs a
+    "pass" for this session against that segment and decides whether
+    it's time to (re-)show the "help name this road" prompt.
+
+    Returns None when the ping isn't near an unnamed-type road (the
+    common case -- most roads are already named), otherwise a dict
+    with the segment's identity + whether should_prompt is True.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, road_code, name_status, length_km,
+                       ST_Distance(
+                           geom::geography,
+                           ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+                       ) AS dist_m
+                FROM road_segments
+                ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+                LIMIT 1;
+                """,
+                (lon, lat, lon, lat),
+            )
+            nearest = cur.fetchone()
+            if (
+                not nearest
+                or nearest["dist_m"] is None
+                or nearest["dist_m"] > ROAD_PASS_MAX_DISTANCE_M
+                or nearest["name_status"] not in UNNAMED_STATUSES
+            ):
+                return None
+
+            segment_id = nearest["id"]
+            cur.execute(
+                """
+                INSERT INTO road_segment_passes
+                    (session_id, account_id, road_segment_id, pass_count, first_seen_at, last_seen_at)
+                VALUES (%s, %s, %s, 1, now(), now())
+                ON CONFLICT (session_id, road_segment_id) DO UPDATE SET
+                    pass_count = road_segment_passes.pass_count + 1,
+                    last_seen_at = now(),
+                    account_id = COALESCE(road_segment_passes.account_id, EXCLUDED.account_id)
+                RETURNING pass_count,
+                    (last_prompted_at IS NULL OR last_prompted_at < now() - interval '2 days') AS can_prompt;
+                """,
+                (session_id, account_id, segment_id),
+            )
+            pass_row = cur.fetchone()
+
+            cur.execute(
+                "SELECT COUNT(DISTINCT session_id) AS n FROM road_segment_passes WHERE road_segment_id = %s;",
+                (segment_id,),
+            )
+            unique_passers = cur.fetchone()["n"]
+
+            # Require at least 2 pings on the road (not just one, which
+            # could be a passing GPS blip near an intersection) before
+            # ever prompting, then don't nag again for 2 days.
+            should_prompt = pass_row["pass_count"] >= 2 and pass_row["can_prompt"]
+            if should_prompt:
+                cur.execute(
+                    """
+                    UPDATE road_segment_passes SET last_prompted_at = now()
+                    WHERE session_id = %s AND road_segment_id = %s;
+                    """,
+                    (session_id, segment_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "id": segment_id,
+        "road_code": nearest["road_code"],
+        "length_km": float(nearest["length_km"]) if nearest["length_km"] is not None else None,
+        "unique_passers": unique_passers,
+        "should_prompt": should_prompt,
+    }
+
+
+def fetch_nearby_road_identity(lat, lon, radius_km=25, limit=30):
+    """Unnamed/suggested/community_supported segments near (lat, lon),
+    with how many distinct sessions have actually driven them and how
+    many name suggestions are pending -- feeds the Road Identity tool's
+    "roads near you" list."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                    rs.id, rs.road_code, rs.name, rs.name_status, rs.suggested_name, rs.length_km,
+                    ST_Distance(
+                        rs.geom::geography,
+                        ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+                    ) / 1000.0 AS distance_km,
+                    (SELECT COUNT(DISTINCT p.session_id) FROM road_segment_passes p
+                        WHERE p.road_segment_id = rs.id) AS unique_passers,
+                    (SELECT COUNT(*) FROM road_name_submissions sub
+                        WHERE sub.road_segment_id = rs.id AND sub.status = 'pending') AS submission_count
+                FROM road_segments rs
+                WHERE rs.name_status = ANY(%s)
+                  AND ST_DWithin(
+                        rs.geom::geography,
+                        ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
+                        %s * 1000
+                      )
+                ORDER BY distance_km ASC
+                LIMIT %s;
+                """,
+                (lon, lat, list(UNNAMED_STATUSES), lon, lat, radius_km, limit),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "id": r["id"],
+            "road_code": r["road_code"],
+            "name": r["name"],
+            "name_status": r["name_status"],
+            "suggested_name": r["suggested_name"],
+            "length_km": float(r["length_km"]) if r["length_km"] is not None else None,
+            "distance_km": round(float(r["distance_km"]), 2),
+            "unique_passers": r["unique_passers"],
+            "submission_count": r["submission_count"],
+        }
+        for r in rows
+    ]
+
+
+def submit_road_name(segment_id, account_id, submitted_name, language="en", note=None, source="driver_pass"):
+    """Records one person's suggestion for a road's name, then
+    recomputes the segment's suggested_name as whichever pending
+    submission currently has the most votes (ties broken by whichever
+    was suggested first). An exact duplicate (same segment + same
+    account + same text) is a no-op via the table's unique constraint."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO road_name_submissions
+                    (road_segment_id, account_id, submitted_name, language, note, source)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (road_segment_id, account_id, submitted_name) DO NOTHING
+                RETURNING id;
+                """,
+                (segment_id, account_id, submitted_name, language, note, source),
+            )
+            row = cur.fetchone()
+
+            cur.execute(
+                """
+                UPDATE road_segments rs
+                SET suggested_name = top.submitted_name,
+                    name_status = CASE WHEN rs.name_status = 'unnamed' THEN 'suggested' ELSE rs.name_status END
+                FROM (
+                    SELECT submitted_name, COUNT(*) AS votes, MIN(created_at) AS first_at
+                    FROM road_name_submissions
+                    WHERE road_segment_id = %s AND status = 'pending'
+                    GROUP BY submitted_name
+                    ORDER BY votes DESC, first_at ASC
+                    LIMIT 1
+                ) top
+                WHERE rs.id = %s;
+                """,
+                (segment_id, segment_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"id": row["id"] if row else None, "duplicate": row is None}
+
+
+def fetch_road_name_queue():
+    """Pending name submissions for the authority review queue, most
+    corroborated first (same name suggested by several submissions,
+    and/or a segment several distinct sessions have actually driven)."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                    s.id, s.road_segment_id, rs.road_code, s.submitted_name, s.note, s.language,
+                    a.full_name AS submitted_by,
+                    (SELECT COUNT(*) FROM road_name_submissions s2
+                        WHERE s2.road_segment_id = s.road_segment_id
+                          AND s2.submitted_name = s.submitted_name
+                          AND s2.status = 'pending') AS same_name_votes,
+                    (SELECT COUNT(DISTINCT p.session_id) FROM road_segment_passes p
+                        WHERE p.road_segment_id = s.road_segment_id) AS unique_passers
+                FROM road_name_submissions s
+                JOIN road_segments rs ON rs.id = s.road_segment_id
+                LEFT JOIN accounts a ON a.id = s.account_id
+                WHERE s.status = 'pending'
+                ORDER BY same_name_votes DESC, s.created_at ASC;
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "id": r["id"],
+            "segment_id": r["road_segment_id"],
+            "road_code": r["road_code"],
+            "submitted_name": r["submitted_name"],
+            "note": r["note"],
+            "language": r["language"],
+            "submitted_by": r["submitted_by"],
+            "same_name_votes": r["same_name_votes"],
+            "unique_passers": r["unique_passers"],
+        }
+        for r in rows
+    ]
+
+
+def review_road_name_submission(submission_id, approve, reviewer_account_id=None):
+    """Authority action on one pending submission. Approving activates
+    that name on the road segment (marks it 'named') and auto-rejects
+    any other still-pending submissions for the same segment, since a
+    segment can only have one active name at a time. Raises ValueError
+    if the submission doesn't exist or was already reviewed."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT road_segment_id, submitted_name FROM road_name_submissions WHERE id = %s AND status = 'pending';",
+                (submission_id,),
+            )
+            submission = cur.fetchone()
+            if not submission:
+                raise ValueError("Submission not found or already reviewed")
+
+            segment_id = submission["road_segment_id"]
+            new_status = "approved" if approve else "rejected"
+            cur.execute(
+                """
+                UPDATE road_name_submissions
+                SET status = %s, reviewed_by = %s, reviewed_at = now()
+                WHERE id = %s;
+                """,
+                (new_status, reviewer_account_id, submission_id),
+            )
+
+            if approve:
+                cur.execute(
+                    """
+                    UPDATE road_segments
+                    SET name = %s,
+                        official_name = COALESCE(official_name, %s),
+                        local_name = %s,
+                        suggested_name = NULL,
+                        name_status = 'named',
+                        name_source = 'community_verified',
+                        name_verified_by = %s,
+                        name_verified_at = now(),
+                        updated_at = now()
+                    WHERE id = %s;
+                    """,
+                    (submission["submitted_name"], submission["submitted_name"], submission["submitted_name"],
+                     reviewer_account_id, segment_id),
+                )
+                # Any other still-pending suggestions for this segment
+                # are now moot -- the segment has an active name.
+                cur.execute(
+                    """
+                    UPDATE road_name_submissions
+                    SET status = 'rejected', reviewed_by = %s, reviewed_at = now()
+                    WHERE road_segment_id = %s AND status = 'pending' AND id != %s;
+                    """,
+                    (reviewer_account_id, segment_id, submission_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"id": submission_id, "status": new_status, "segment_id": segment_id}

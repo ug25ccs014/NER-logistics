@@ -6,6 +6,7 @@ import { useMap } from '../context/MapContext.jsx';
 import { useChat } from '../context/ChatContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
+import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
 
 // This replaces the old "Nearby Help (Live Location)" panel that had
 // a <select id="driverRole"> letting a Field Reporter re-declare
@@ -62,6 +63,7 @@ export default function LiveLocationSos() {
   useEffect(() => {
     if (!lastPosition) return;
     myPosRef.current = lastPosition;
+    placeCurrentLocationMarker(map, lastPosition.lat, lastPosition.lon);
     // Once app-wide tracking has a position, the SOS/help panel can
     // immediately discover other logged-in users nearby. No manual
     // Start Sharing or SOS action is required just to populate contacts.
@@ -170,6 +172,7 @@ export default function LiveLocationSos() {
 
     const search = async (lat, lon) => {
       myPosRef.current = { lat, lon };
+      placeCurrentLocationMarker(map, lat, lon);
       setTrackingStatus('stuck');
       await api.postLocation(sessionId, name, phone, apiRole, lat, lon, 'stuck').catch(() => {});
       if (map) map.setView([lat, lon], 11);

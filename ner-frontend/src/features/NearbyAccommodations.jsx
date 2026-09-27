@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useMap } from '../context/MapContext.jsx';
 import { useGeolocation } from '../hooks/useGeolocation.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
 
 function accommodationIcon() {
   return L.divIcon({
@@ -46,6 +47,7 @@ export default function NearbyAccommodations() {
       setStatus(err.message);
       return;
     }
+    placeCurrentLocationMarker(map, pos.lat, pos.lon);
     setStatus('Looking for nearby accommodation...');
     try {
       const hotels = await api.nearbyAccommodations(pos.lat, pos.lon);

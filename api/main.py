@@ -102,6 +102,22 @@ class VerifyReportIn(BaseModel):
     verified: bool
 
 
+VALID_ROAD_NAME_LANGUAGES = {"en", "as", "hi", "local"}
+VALID_ROAD_NAME_SOURCES = {"driver_pass", "road_identity"}
+
+
+class RoadNameSubmissionIn(BaseModel):
+    segment_id: int
+    submitted_name: str
+    language: Optional[str] = "en"
+    note: Optional[str] = None
+    source: Optional[str] = "driver_pass"
+
+
+class RoadNameReviewIn(BaseModel):
+    approve: bool
+
+
 VALID_ALERT_TYPES = {"blocked_road", "high_risk", "delivery_delay", "emergency"}
 VALID_ALERT_SEVERITIES = {"info", "warning", "critical"}
 
@@ -209,6 +225,20 @@ def get_current_account(credentials: Optional[HTTPAuthorizationCredentials] = De
         return auth.decode_access_token(credentials.credentials)
     except pyjwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired session -- please log in again")
+
+
+def get_optional_account(credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme)) -> Optional[dict]:
+    """Same as get_current_account, but for routes that work fine for
+    an anonymous session and only want to attribute the action to an
+    account when one happens to be logged in (e.g. location pings,
+    road-name submissions). Never raises -- no/invalid/expired token
+    just means "anonymous" here."""
+    if credentials is None:
+        return None
+    try:
+        return auth.decode_access_token(credentials.credentials)
+    except pyjwt.PyJWTError:
+        return None
 
 
 app = FastAPI(title="NER Logistics Platform API")
@@ -683,10 +713,17 @@ def post_field_report(report: FieldReportIn):
 
 
 @app.post("/drivers/location")
-def post_driver_location(loc: DriverLocationIn):
+def post_driver_location(loc: DriverLocationIn, current: Optional[dict] = Depends(get_optional_account)):
     """Upsert the caller's live location (one row per session_id --
     overwritten on every ping, not a history log). Used for the
-    'nearby help' / stuck-driver feature."""
+    'nearby help' / stuck-driver feature.
+
+    Also doubles as the Road Identity feature's data source: every
+    ping is checked against nearby unnamed roads (db.record_road_pass)
+    so that normal driving -- not a special mode -- is what discovers
+    which unnamed roads people actually travel. When that check decides
+    it's time to ask, the response's road_opportunity.should_prompt is
+    true and the frontend (RoadNamingPrompt.jsx) shows the naming card."""
     role = loc.role or "driver"
     status = loc.status or "active"
     if role not in VALID_DRIVER_ROLES:
@@ -694,7 +731,10 @@ def post_driver_location(loc: DriverLocationIn):
     if status not in VALID_DRIVER_STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {sorted(VALID_DRIVER_STATUSES)}")
     db.upsert_driver_location(loc.session_id, loc.driver_name, loc.phone, role, loc.lat, loc.lon, status)
-    return {"status": "ok"}
+
+    account_id = int(current["sub"]) if current else None
+    road_opportunity = db.record_road_pass(loc.session_id, account_id, loc.lat, loc.lon)
+    return {"status": "ok", "road_opportunity": road_opportunity}
 
 
 @app.delete("/drivers/location/{session_id}")
@@ -715,6 +755,64 @@ def get_nearby_drivers(
     """Other drivers/field officers who shared their location recently
     and are within radius_km -- for the 'I'm stuck, who's nearby' flow."""
     return db.fetch_nearby_drivers(lat, lon, exclude, radius_km=radius_km)
+
+
+@app.get("/roads/nearby-identity")
+def get_nearby_road_identity(
+    lat: float,
+    lon: float,
+    radius_km: float = 25,
+    limit: int = 30,
+):
+    """Unnamed/suggested/community_supported road segments near
+    (lat, lon), with traveller + submission counts -- feeds the Road
+    Identity tool's "roads near you" list (RoadIdentity.jsx)."""
+    return db.fetch_nearby_road_identity(lat, lon, radius_km=radius_km, limit=limit)
+
+
+@app.post("/roads/name")
+def post_road_name(body: RoadNameSubmissionIn, current: Optional[dict] = Depends(get_optional_account)):
+    """Suggest a name for an unnamed/suggested road segment -- from
+    either the Road Identity tool (source='road_identity') or the
+    passive "you just drove this" prompt (source='driver_pass').
+    Attributed to the logged-in account when there is one, but doesn't
+    require login."""
+    if body.language not in VALID_ROAD_NAME_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {sorted(VALID_ROAD_NAME_LANGUAGES)}")
+    if body.source not in VALID_ROAD_NAME_SOURCES:
+        raise HTTPException(status_code=400, detail=f"source must be one of {sorted(VALID_ROAD_NAME_SOURCES)}")
+    if not body.submitted_name.strip():
+        raise HTTPException(status_code=400, detail="submitted_name cannot be empty")
+
+    account_id = int(current["sub"]) if current else None
+    result = db.submit_road_name(
+        body.segment_id, account_id, body.submitted_name.strip(),
+        language=body.language, note=body.note, source=body.source,
+    )
+    return {"status": "duplicate" if result["duplicate"] else "submitted", "id": result["id"]}
+
+
+@app.get("/roads/name-queue")
+def get_road_name_queue():
+    """Pending road-name submissions for the authority verification
+    queue (RoadIdentity.jsx's role === 'authority' section)."""
+    return db.fetch_road_name_queue()
+
+
+@app.post("/roads/name/{submission_id}/review")
+def review_road_name(
+    submission_id: int,
+    body: RoadNameReviewIn,
+    current: Optional[dict] = Depends(get_optional_account),
+):
+    """Authority action: verify/activate or reject a pending road-name
+    submission. Approving names the road segment and auto-rejects any
+    other pending submissions for the same segment."""
+    reviewer_id = int(current["sub"]) if current else None
+    try:
+        return db.review_road_name_submission(submission_id, body.approve, reviewer_account_id=reviewer_id)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err))
 
 
 @app.get("/districts/status")

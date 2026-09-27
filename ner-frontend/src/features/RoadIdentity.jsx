@@ -6,6 +6,7 @@ import { useMap } from '../context/MapContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
 
 function IdentityLayer() {
   const { map } = useMap();
@@ -32,6 +33,7 @@ function IdentityLayer() {
 export default function RoadIdentity() {
   const { t } = useLanguage();
   const { role } = useAuth();
+  const { map } = useMap();
   const { lastPosition } = useLocationTracking();
   const { refresh: refreshSegments } = useSegments();
   const [roads, setRoads] = useState([]);
@@ -41,6 +43,11 @@ export default function RoadIdentity() {
   const [language, setLanguage] = useState('en');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    if (!lastPosition) return;
+    placeCurrentLocationMarker(map, lastPosition.lat, lastPosition.lon);
+  }, [map, lastPosition?.lat, lastPosition?.lon]);
 
   const load = async () => {
     if (!lastPosition) return;

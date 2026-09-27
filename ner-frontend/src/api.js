@@ -150,6 +150,17 @@ export const api = {
   // Route segments (for the map)
   segments: () => request('/segments'),
 
+  // Road Identity: unnamed-road discovery + community naming.
+  // lastPosition here is the app-wide tracked position (or a one-off
+  // GPS fix) -- same shape as everywhere else, { lat, lon }.
+  nearbyRoadIdentity: (lat, lon, radiusKm = 25, limit = 30) =>
+    request(`/roads/nearby-identity?lat=${lat}&lon=${lon}&radius_km=${radiusKm}&limit=${limit}`),
+  submitRoadName: (payload) =>
+    request('/roads/name', { method: 'POST', body: JSON.stringify(payload) }),
+  roadNameQueue: () => request('/roads/name-queue'),
+  reviewRoadName: (id, approve) =>
+    request(`/roads/name/${id}/review`, { method: 'POST', body: JSON.stringify({ approve }) }),
+
   // Chat (threaded direct messages between two sessions) + inbox
   chatSend: (payload) => request('/chat/send', { method: 'POST', body: JSON.stringify(payload) }),
   chatThread: (sessionId, withSessionId) =>
