@@ -171,8 +171,12 @@ export default function RouteSearch({ onRouteFound }) {
             forecasted: true,
             forecastMeta: forecast,
           };
-        } catch {
-          // Keep the route usable if weather service is temporarily unavailable.
+        } catch (err) {
+          // Keep the route usable if weather service is temporarily
+          // unavailable -- but log why, instead of silently falling back
+          // with no trace. Check the browser console for this the next
+          // time "Live forecast unavailable" shows up.
+          console.error('Forecast failed for route option, falling back to current road data:', err);
           return opt;
         }
       }));

@@ -1,4 +1,5 @@
 """Compute route-aware forecast risk for a planned trip."""
+import concurrent.futures
 import json
 from datetime import datetime, timedelta, timezone
 import db
@@ -12,6 +13,30 @@ def compute_forecast_segments(depart_at_utc: datetime, segment_ids: list, journe
     features = []
     total = max(1, int(journey_minutes or 60))
     count = max(1, len(rows))
+
+    # A multi-segment route commonly spans several weather grid cells, and
+    # forecast_for_window() used to fetch each one lazily, in turn, inside
+    # the scoring loop below -- meaning a 5-segment route touching 4
+    # distinct cells made 4 sequential blocking HTTP calls to Open-Meteo.
+    # On a serverless function with a hard execution time limit, that's
+    # the difference between finishing in ~1s and getting killed by the
+    # platform mid-request (which surfaces to the user as a silent
+    # "Live forecast unavailable"). Fetching every distinct cell up front,
+    # in parallel, bounds the wait to roughly the slowest single call
+    # instead of the sum of all of them.
+    cells_needed = {forecast_service._cell(row["lat"], row["lon"]) for row in rows}
+    if cells_needed:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(cells_needed))) as pool:
+            future_to_cell = {pool.submit(forecast_service._fetch, *cell): cell for cell in cells_needed}
+            for future in concurrent.futures.as_completed(future_to_cell):
+                cell = future_to_cell[future]
+                try:
+                    cache[cell] = future.result()
+                except forecast_service.ForecastUnavailable:
+                    # Leave it out of the cache -- forecast_for_window will
+                    # hit the same failure again for any segment needing
+                    # this cell, which is the existing/expected behavior.
+                    pass
 
     for idx, row in enumerate(rows):
         # The frontend supplies segments in route order. Estimate the ETA at

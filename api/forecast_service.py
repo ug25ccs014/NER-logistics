@@ -63,7 +63,12 @@ def _fetch_open_meteo(lat, lon):
         "precipitation_unit": "mm",
     }
     try:
-        resp = requests.get(BASE_URL, params=params, timeout=15)
+        # Was 15s -- on a serverless function with a hard total time
+        # budget, one slow call at 15s could eat the whole thing by
+        # itself even with the other segments' cells fetched in parallel
+        # (see trip_forecast.py). 8s is still generous for Open-Meteo,
+        # which normally responds in well under a second.
+        resp = requests.get(BASE_URL, params=params, timeout=8)
         if not resp.ok:
             raise ForecastUnavailable(f"Weather forecast request failed ({resp.status_code}).")
         data = resp.json()

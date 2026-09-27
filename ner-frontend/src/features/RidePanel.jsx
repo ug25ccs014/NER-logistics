@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../context/MapContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
@@ -31,6 +31,41 @@ export default function RidePanel() {
   // only permission-denied is unrecoverable and worth a one-time alert.
   const permissionDeniedAlertedRef = useRef(false);
 
+  const stopRide = () => {
+    if (rideWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(rideWatchRef.current);
+      rideWatchRef.current = null;
+    }
+    if (simIntervalRef.current !== null) {
+      clearInterval(simIntervalRef.current);
+      simIntervalRef.current = null;
+    }
+    if (simMarkerRef.current && map) {
+      map.removeLayer(simMarkerRef.current);
+      simMarkerRef.current = null;
+    }
+    stopRealGpsWatch();
+    setActive(false);
+  };
+
+  // Kept up to date every render so the unmount cleanup below always
+  // calls the CURRENT stopRide (with the current `map`), never a stale
+  // one captured back on first mount before `map` was even ready.
+  const stopRideRef = useRef(stopRide);
+  stopRideRef.current = stopRide;
+
+  // Nothing was ever calling stopRide() when this component unmounts --
+  // e.g. navigating to a different tool without pressing "Stop" first.
+  // The watchPosition callback kept running in the background against a
+  // Leaflet map that Workspace had already torn down (each tool switch
+  // mounts a fresh <MapView/>), throwing on every GPS update from then
+  // on -- which is what made a fresh "Start Ride" look broken until you
+  // switched away and back again (a brand-new RidePanel instance, with
+  // its own fresh refs, finally got a valid map to work with).
+  useEffect(() => {
+    return () => stopRideRef.current();
+  }, []);
+
   const updatePanel = (pos, modeLabel) => {
     if (!routeCoords) return;
     const dest = routeCoords[routeCoords.length - 1];
@@ -45,6 +80,7 @@ export default function RidePanel() {
     if (realGpsWatchRef.current !== null || !navigator.geolocation) return;
     realGpsWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        if (!map) return;
         const pos = [position.coords.latitude, position.coords.longitude];
         if (!realGpsMarkerRef.current) {
           realGpsMarkerRef.current = L.marker(pos, { icon: pulsingDotIcon() }).addTo(map);
@@ -65,27 +101,10 @@ export default function RidePanel() {
       navigator.geolocation.clearWatch(realGpsWatchRef.current);
       realGpsWatchRef.current = null;
     }
-    if (realGpsMarkerRef.current) {
+    if (realGpsMarkerRef.current && map) {
       map.removeLayer(realGpsMarkerRef.current);
       realGpsMarkerRef.current = null;
     }
-  };
-
-  const stopRide = () => {
-    if (rideWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(rideWatchRef.current);
-      rideWatchRef.current = null;
-    }
-    if (simIntervalRef.current !== null) {
-      clearInterval(simIntervalRef.current);
-      simIntervalRef.current = null;
-    }
-    if (simMarkerRef.current) {
-      map.removeLayer(simMarkerRef.current);
-      simMarkerRef.current = null;
-    }
-    stopRealGpsWatch();
-    setActive(false);
   };
 
   const startRealRide = () => {
@@ -99,9 +118,13 @@ export default function RidePanel() {
     }
     stopRide();
     permissionDeniedAlertedRef.current = false;
-    setGpsStatus(null);
+    // Give immediate feedback instead of the button just silently going
+    // to "Stop" with nothing else on screen for up to 30s while a real
+    // GPS fix comes in -- that dead air is what made this look hung.
+    setGpsStatus('Getting your location…');
     rideWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        if (!map) return; // MapView between mounts (tool-switch race) -- next fix will retry
         const pos = [position.coords.latitude, position.coords.longitude];
         if (!realGpsMarkerRef.current) {
           realGpsMarkerRef.current = L.marker(pos, { icon: pulsingDotIcon() }).addTo(map);
@@ -143,6 +166,7 @@ export default function RidePanel() {
     let i = 0;
     const stepEvery = 300;
     simIntervalRef.current = setInterval(() => {
+      if (!map) return;
       if (i >= routeCoords.length) {
         stopRide();
         return;
