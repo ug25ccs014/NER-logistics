@@ -553,6 +553,26 @@ def root():
     return {"status": "ok", "service": "NER Logistics Platform API"}
 
 
+@app.get("/health")
+def health():
+    """Deliberately trivial, and deliberately touches the database.
+    Hitting "/" alone would only keep the Vercel function warm --
+    Neon's compute suspends independently based on actual DB activity,
+    so login (which always needs a real DB query) would still pay the
+    wake-up cost even with a warm function. Point an external pinger
+    (cron-job.org, UptimeRobot, etc.) at this every few minutes -- more
+    often than Neon's idle-suspend window -- and both stay warm, so a
+    login after days of no traffic is just as fast as one five minutes
+    after the last visit."""
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+    finally:
+        conn.close()
+    return {"status": "ok"}
+
+
 @app.post("/auth/register")
 def register(body: RegisterIn):
     """Create a new account. Driver needs just a name/phone/password.
