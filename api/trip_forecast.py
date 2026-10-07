@@ -224,3 +224,35 @@ def compute_forecast_segments(depart_at_utc: datetime, segment_ids: list, journe
                            "plus recent rainfall (wet ground), terrain and live field incidents.",
         "report": report,
     }
+
+
+def compute_point_forecast(depart_at_utc: datetime, points: list, chunk_minutes: int = 5) -> dict:
+    """Live risk for arbitrary points (stretches of road that are not in the monitored network).
+
+    Weather comes from the same multi-source forecast at each point's own ETA. Terrain
+    uses the slope the caller inherited from the nearest monitored segment (or 0), and
+    there are no field reports for an unmonitored road, so the result is flagged as an
+    estimate rather than a monitored score.
+    """
+    points = points[:80]
+    cache = {}
+    forecast_service.prefetch({forecast_service._cell(p["lat"], p["lon"]) for p in points}, cache)
+    out = []
+    for i, p in enumerate(points):
+        seg_start = depart_at_utc + timedelta(minutes=float(p.get("offset_min") or 0))
+        seg_end = seg_start + timedelta(minutes=max(5, chunk_minutes))
+        try:
+            weather = forecast_service.forecast_for_window(p["lat"], p["lon"], seg_start, seg_end, cache)
+        except forecast_service.ForecastUnavailable:
+            out.append({"index": p.get("index", i), "risk_score": None})
+            continue
+        parts = risk_model.score_breakdown(**weather, avg_slope_deg=p.get("slope") or 0)
+        score = parts["overall"]
+        out.append({
+            "index": p.get("index", i), "risk_score": score, "risk_level": risk_model.classify_risk_level(score),
+            "weather_score": parts["weather_score"], "terrain_score": parts["terrain_score"],
+            "hazard_score": 0.0, "risk_driver": parts["driver"], **weather,
+            "estimated": True, "name": "Unmonitored road (live weather estimate)",
+            "forecast_arrival": seg_start.isoformat(), "model_version": risk_model.MODEL_VERSION,
+        })
+    return {"points": out, "generated_at": datetime.now(timezone.utc).isoformat()}

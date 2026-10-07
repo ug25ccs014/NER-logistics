@@ -9,6 +9,7 @@ import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
 import { riskLevelIcon } from '../utils/mapIcons.js';
 import {
   findNearbyMonitoredSegments,
+  fillGapChunks,
   computeRouteRiskChunks,
   getRiskColor,
   scoreRouteRisk,
@@ -109,7 +110,7 @@ export default function RouteSearch({ onRouteFound }) {
               ? `<b>${chunk.segment.name_status === 'unnamed' ? t('unnamed_road') : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>${t('popup_risk_label')} <b style="color:${chunk.color}">${
                   chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
                 }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
-              : 'No risk data for this stretch (unmonitored road)'
+              : 'No risk data for this stretch (unmonitored road and live estimate unavailable)'
           );
           routeLayersRef.current.push(line);
         });
@@ -148,7 +149,7 @@ export default function RouteSearch({ onRouteFound }) {
     try {
       const routes = await fetchRealRoutes([origin.lon, origin.lat], [dest.lon, dest.lat]);
       const baseOptions = routes.map((route) => {
-        const nearbySegments = freshSegments ? findNearbyMonitoredSegments(route.coords, freshSegments).slice(0, 12) : [];
+        const nearbySegments = freshSegments ? findNearbyMonitoredSegments(route.coords, freshSegments).slice(0, 30) : [];
         const risk = scoreRouteRisk(nearbySegments);
         const chunks = computeRouteRiskChunks(route.coords, nearbySegments);
         return { route, nearbySegments, risk, chunks, forecasted: false, forecastMeta: null };
@@ -191,11 +192,15 @@ export default function RouteSearch({ onRouteFound }) {
           const f = byId.get(seg.id);
           return f ? { ...seg, ...f } : seg;
         });
+        // Fill unmonitored stretches with a live weather-based estimate.
+        const chunks = await fillGapChunks(computeRouteRiskChunks(opt.route.coords, nearbySegments), {
+          departIso: departIso(input), durationMin: opt.route.durationMin, fetchPoints: api.forecastPoints,
+        });
         out.push({
           ...opt,
           nearbySegments,
-          risk: scoreRouteRisk(nearbySegments),
-          chunks: computeRouteRiskChunks(opt.route.coords, nearbySegments),
+          risk: scoreRouteRisk([...nearbySegments, ...chunks.filter((c) => c.segment?.estimated).map((c) => c.segment)]),
+          chunks,
           forecasted: true,
           forecastMeta: forecast,
         });

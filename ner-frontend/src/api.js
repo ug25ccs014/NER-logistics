@@ -171,6 +171,9 @@ export const api = {
   forecastSegments: (departAtLocalIso, segmentIds, journeyMinutes = 60) =>
     request(`/segments/forecast?depart_at=${encodeURIComponent(departAtLocalIso)}&segment_ids=${segmentIds.join(',')}&journey_minutes=${encodeURIComponent(journeyMinutes)}`),
 
+  // Live weather-based risk for route stretches outside the monitored network.
+  forecastPoints: (body) => request('/forecast/points', { method: 'POST', body: JSON.stringify(body) }),
+
   // Route segments (for the map)
   segments: () => request('/segments'),
 

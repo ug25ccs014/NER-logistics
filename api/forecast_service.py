@@ -94,7 +94,16 @@ def _fnum(v, default=None):
 # ---------------------------------------------------- provider: Open-Meteo
 _OM_HOURLY = ["temperature_2m", "precipitation", "rain", "showers", "precipitation_probability",
               "visibility", "wind_speed_10m", "wind_gusts_10m", "weather_code", "soil_moisture_0_to_10cm"]
+_OM_EXTRA_HOURLY = ["cape"]   # convective energy: independent thunderstorm signal
 _OM_CURRENT = ["rain"]
+
+
+def _cape_thunder_pct(cape, pop):
+    """Rough thunder likelihood (0-80) from CAPE (J/kg). An ESTIMATE, flagged as such in the debug view."""
+    if cape is None:
+        return 0.0
+    p = max(0.0, min(80.0, (float(cape) - 300.0) / 1700.0 * 80.0))
+    return p * (0.6 if (pop is not None and pop < 10) else 1.0)
 
 
 def _normalize_open_meteo(data):
@@ -114,9 +123,12 @@ def _normalize_open_meteo(data):
         "wind": col("wind_speed_10m"), "gust": col("wind_gusts_10m"), "temp": col("temperature_2m"),
         "code": codes, "soil": col("soil_moisture_0_to_10cm"),
         "thunder": [c is not None and int(c) in (95, 96, 99) for c in codes],
-        # Open-Meteo gives no thunder *probability*, only a WMO code: treat a
-        # thunderstorm code as a high-likelihood signal, otherwise 0.
-        "tprob": [90.0 if (c is not None and int(c) in (95, 96, 99)) else 0.0 for c in codes],
+        # Open-Meteo gives no thunder *probability*: a thunderstorm WMO code counts
+        # as high likelihood, otherwise estimate from CAPE (if the request returned it).
+        "cape": col("cape"),
+        "tprob": [max(90.0 if (c is not None and int(c) in (95, 96, 99)) else 0.0,
+                      _cape_thunder_pct(cp, pp))
+                  for c, cp, pp in zip(codes, col("cape"), col("precipitation_probability"))],
         "has_past": True,
     }
 
@@ -128,10 +140,11 @@ def _open_meteo_request(cells):
     global _OM_BLOCKED_UNTIL
     if time.time() < _OM_BLOCKED_UNTIL:
         raise ForecastUnavailable("Open-Meteo rate-limited (HTTP 429); pausing calls briefly")
+    use_extra = True
     params = {
         "latitude": ",".join(str(c[0]) for c in cells),
         "longitude": ",".join(str(c[1]) for c in cells),
-        "hourly": ",".join(_OM_HOURLY), "current": ",".join(_OM_CURRENT),
+        "hourly": ",".join(_OM_HOURLY + _OM_EXTRA_HOURLY), "current": ",".join(_OM_CURRENT),
         "timezone": "UTC", "forecast_days": 10, "past_days": 3,
         "wind_speed_unit": "kmh", "precipitation_unit": "mm",
     }
@@ -147,6 +160,16 @@ def _open_meteo_request(cells):
         if resp.status_code == 429 or resp.status_code >= 500:
             last = f"HTTP {resp.status_code}"
             continue
+        if resp.status_code == 400 and use_extra:
+            # An optional extra variable was rejected: retry once without it
+            # rather than losing the whole forecast.
+            use_extra = False
+            params["hourly"] = ",".join(_OM_HOURLY)
+            try:
+                resp = requests.get(OPEN_METEO_URL, params=params, timeout=7)
+            except requests.exceptions.RequestException as exc:
+                last = f"network error: {exc}"
+                continue
         if not resp.ok:
             raise ForecastUnavailable(f"Open-Meteo HTTP {resp.status_code}")
         payload = resp.json()
@@ -180,6 +203,7 @@ def _normalize_met_no(data):
     if not ts:
         raise ForecastUnavailable("MET Norway returned no timeseries.")
     pts = []
+    tfield_seen = False
     for e in ts:
         t = _parse_time(e["time"])
         inst = ((e.get("data") or {}).get("instant") or {}).get("details") or {}
@@ -198,6 +222,8 @@ def _normalize_met_no(data):
         tprob_v = _fnum(det.get("probability_of_thunder"))
         if tprob_v is None:                      # field missing -> fall back to the symbol
             tprob_v = 90.0 if thd else 0.0
+        if det.get("probability_of_thunder") is not None:
+            tfield_seen = True
         pts.append((t, inst, amount, thd, pop_v, tprob_v))
     pts.sort(key=lambda p: p[0])
 
@@ -225,7 +251,8 @@ def _normalize_met_no(data):
     n = len(times)
     return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": pop,
             "vis": [None] * n, "wind": wind, "gust": gust, "temp": temp, "code": [None] * n,
-            "soil": [None] * n, "thunder": thunder, "tprob": tprob, "has_past": False}
+            "soil": [None] * n, "thunder": thunder, "tprob": tprob, "has_past": False,
+            "tprob_field_present": tfield_seen}
 
 
 def _fetch_met_no_one(cell):
@@ -510,3 +537,26 @@ def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
         "rain_spread_mm": spread,
         "data_age_min": age_min,
     }
+
+
+def debug_thunder(lat, lon, hours=12):
+    """What each provider says about thunder/rain for the next `hours` at this point (for diagnosing a 0% reading)."""
+    cell = _cell(lat, lon)
+    bundle = prefetch([cell]).get(cell)
+    out = {"cell": cell, "providers": {}, "health": provider_health()["providers"]}
+    if bundle is None:
+        out["error"] = "No provider returned data for this cell (see health)."
+        return out
+    now = datetime.now(timezone.utc)
+    for name, ser in bundle["series"].items():
+        rows = []
+        for i, t in enumerate(ser["times"]):
+            if now - timedelta(hours=1) <= t <= now + timedelta(hours=hours):
+                def g(k):
+                    v = ser.get(k) or []
+                    return v[i] if i < len(v) else None
+                rows.append({"time": t.isoformat(), "thunder_pct": g("tprob"), "rain_prob_pct": g("pop"),
+                             "precip_mm": g("precip"), "cape": g("cape")})
+        out["providers"][PROVIDER_LABELS[name]] = {
+            "thunder_probability_field_present": ser.get("tprob_field_present"), "hours": rows}
+    return out

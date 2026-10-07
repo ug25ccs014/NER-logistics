@@ -9,6 +9,7 @@ import { riskLevelIcon } from '../utils/mapIcons.js';
 import {
   findNearbyMonitoredSegments,
   computeRouteRiskChunks,
+  fillGapChunks,
   getRiskColor,
   scoreRouteRisk,
   explainRisk,
@@ -56,7 +57,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         return;
       }
       const route = routes[0];
-      const nearby = findNearbyMonitoredSegments(route.coords, segments).slice(0, 12);
+      const nearby = findNearbyMonitoredSegments(route.coords, segments).slice(0, 30);
 
       // Always draw the actual road route first. Forecasting is an overlay; a
       // weather/API failure must never make the route itself disappear.
@@ -97,10 +98,15 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
 
       const scored = forecastedNearby.filter((s) => s.risk_score !== null && s.risk_score !== undefined);
       const maxSeg = scored.reduce((best, s) => (!best || s.risk_score > best.risk_score ? s : best), null);
-      const risk = maxSeg
-        ? { score: maxSeg.risk_score, level: maxSeg.risk_level, hasData: true }
+      const chunks = await fillGapChunks(computeRouteRiskChunks(route.coords, forecastedNearby), {
+        departIso: departAt, durationMin: route.durationMin, fetchPoints: api.forecastPoints,
+      });
+      if (cancelled) return;
+      const estMax = chunks.filter((c) => c.segment?.estimated).reduce((b, c) => (!b || c.segment.risk_score > b.risk_score ? c.segment : b), null);
+      const topSeg = [maxSeg, estMax].filter(Boolean).reduce((b, s) => (!b || s.risk_score > b.risk_score ? s : b), null);
+      const risk = topSeg
+        ? { score: topSeg.risk_score, level: topSeg.risk_level, hasData: true }
         : { score: null, level: null, hasData: false };
-      const chunks = computeRouteRiskChunks(route.coords, forecastedNearby);
 
       chunks.forEach((chunk) => {
         const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);

@@ -112,6 +112,10 @@ export function findNearbyMonitoredSegments(routeCoords, segmentsData, threshold
 // monitored segment's risk score, like a live-traffic layer.
 export function computeRouteRiskChunks(routeCoords, nearbySegments, chunkPoints = 8, thresholdKm = 3) {
   const chunks = [];
+  // Cumulative distance so each chunk knows how far along the trip it is (for ETA).
+  const cum = [0];
+  for (let k = 1; k < routeCoords.length; k++) cum.push(cum[k - 1] + haversineKm(routeCoords[k - 1], routeCoords[k]));
+  const totalKm = cum[cum.length - 1] || 1;
   for (let i = 0; i < routeCoords.length - 1; i += chunkPoints) {
     const chunkCoords = routeCoords.slice(i, Math.min(i + chunkPoints + 1, routeCoords.length));
     if (chunkCoords.length < 2) continue;
@@ -136,9 +140,51 @@ export function computeRouteRiskChunks(routeCoords, nearbySegments, chunkPoints 
       coords: chunkCoords,
       color: getRiskColor(hasData ? closestSegment.risk_score : null, hasData),
       segment: hasData ? closestSegment : null,
+      // Extra info used to fill unmonitored stretches with a live estimate.
+      midpoint,
+      startFrac: cum[i] / totalKm,
+      // Slope inherited from the nearest monitored road, only if reasonably close.
+      nearSlope: closestSegment && closestDist <= 15 ? closestSegment.avg_slope_deg ?? null : null,
     });
   }
   return chunks;
+}
+
+// Unmonitored stretches (no segment in the database near them) get a LIVE
+// weather-based estimate from the backend instead of a blank "no data" line.
+// `fetchPoints(body)` is api.forecastPoints. Never throws: on failure the
+// chunks are returned unchanged (still shown as "no data").
+export async function fillGapChunks(chunks, { departIso, durationMin, fetchPoints }) {
+  const gaps = [];
+  chunks.forEach((c, i) => { if (!c.segment && c.midpoint) gaps.push(i); });
+  if (!gaps.length) return chunks;
+  const step = Math.ceil(gaps.length / 60);
+  const sampled = gaps.filter((_, k) => k % step === 0);
+  try {
+    const resp = await fetchPoints({
+      depart_at: departIso,
+      chunk_minutes: Math.max(5, Math.round(durationMin / Math.max(1, chunks.length))),
+      points: sampled.map((i) => ({
+        lat: chunks[i].midpoint[0], lon: chunks[i].midpoint[1],
+        offset_min: chunks[i].startFrac * durationMin, slope: chunks[i].nearSlope, index: i,
+      })),
+    });
+    const byIdx = new Map((resp.points || []).filter((p) => p.risk_score != null).map((p) => [p.index, p]));
+    if (!byIdx.size) return chunks;
+    const keys = [...byIdx.keys()];
+    // Contiguous gap runs share one id so lists/markers collapse them.
+    let runId = null;
+    return chunks.map((c, i) => {
+      if (c.segment || !c.midpoint) { runId = null; return c; }
+      if (runId === null) runId = i;
+      const nearest = keys.reduce((b, k) => (Math.abs(k - i) < Math.abs(b - i) ? k : b), keys[0]);
+      const r = byIdx.get(nearest);
+      return { ...c, color: getRiskColor(r.risk_score, true), segment: { ...r, id: `est-${runId}`, name_status: 'named', road_code: null } };
+    });
+  } catch (err) {
+    console.error('Gap forecast failed:', err);
+    return chunks;
+  }
 }
 
 // Turns raw contributing factors into human-readable reasons, e.g.
@@ -150,7 +196,9 @@ export function explainRisk(p) {
   if (p.forecast_to_departure_mm >= 5) reasons.push(`Forecast rain before this section (${p.forecast_to_departure_mm}mm)`);
   if (p.forecast_during_trip_mm >= 2) reasons.push(`Forecast rain during trip (${p.forecast_during_trip_mm}mm)`);
   if (p.rain_probability_pct >= 60) reasons.push(`Rain probability at arrival (${p.rain_probability_pct}%)`);
-  if (p.thunderstorm_expected) reasons.push('Thunderstorm signal in the next 6 hours');
+  if (p.thunder_probability_pct >= 30) reasons.push(`Thunderstorm probability near arrival (${Math.round(p.thunder_probability_pct)}%)`);
+  else if (p.thunderstorm_expected) reasons.push('Thunderstorm signal near arrival');
+  if (p.estimated) reasons.push('Estimated from live weather only — this road is not in the monitored network');
   if (p.forecast_gust_kmh >= 50) reasons.push(`Strong wind gusts forecast (${p.forecast_gust_kmh}km/h)`);
   if (p.forecast_visibility_m > 0 && p.forecast_visibility_m < 3000) reasons.push(`Reduced visibility forecast (${(p.forecast_visibility_m / 1000).toFixed(1)}km)`);
   if (p.avg_slope_deg !== null && p.avg_slope_deg !== undefined && p.avg_slope_deg >= 15) {

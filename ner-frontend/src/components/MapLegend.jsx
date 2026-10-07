@@ -9,20 +9,22 @@ export default function MapLegend() {
     <div
       style={{
         position: 'absolute', bottom: 16, left: 16, zIndex: 1000,
-        background: 'rgba(15, 23, 42, 0.92)', border: '1px solid var(--border)',
-        borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--text)',
+        background: 'rgba(15, 23, 42, 0.92)', border: '1px solid rgba(255,255,255,0.25)',
+        borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#FFFFFF',
+        textShadow: '0 1px 2px rgba(0,0,0,0.6)',
         display: 'flex', flexDirection: 'column', gap: 6,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3F7FD6', display: 'inline-block' }} />
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3F7FD6', display: 'inline-block', border: '1px solid #fff' }} />
         {t('map_no_data')}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span
           style={{
             width: 120, height: 10, borderRadius: 5, display: 'inline-block',
-            background: 'linear-gradient(90deg, #2F9C84 0%, #F2C94C 35%, #F07C61 65%, #D9534F 100%)',
+            background: 'linear-gradient(90deg, rgb(34,197,94) 0%, rgb(234,179,8) 35%, rgb(249,115,22) 65%, rgb(220,38,38) 100%)',
+            border: '1px solid rgba(255,255,255,0.6)',
           }}
         />
         {t('map_low_severe')}

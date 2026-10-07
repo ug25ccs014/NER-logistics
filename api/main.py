@@ -709,6 +709,42 @@ def get_segments_forecast(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+class ForecastPointIn(BaseModel):
+    lat: float
+    lon: float
+    offset_min: float = 0
+    slope: Optional[float] = None
+    index: Optional[int] = None
+
+
+class ForecastPointsIn(BaseModel):
+    depart_at: datetime
+    chunk_minutes: int = 5
+    points: list[ForecastPointIn]
+
+
+@app.post("/forecast/points")
+def forecast_points(body: ForecastPointsIn):
+    """Live weather-based risk for route stretches outside the monitored road network."""
+    if not body.points:
+        raise HTTPException(status_code=400, detail="points must not be empty.")
+    dep = body.depart_at if body.depart_at.tzinfo else body.depart_at.replace(tzinfo=IST)
+    dep_utc = max(dep.astimezone(timezone.utc), datetime.now(timezone.utc))
+    if dep_utc > forecast_service.max_forecastable_at():
+        raise HTTPException(status_code=400, detail="depart_at is beyond the forecast horizon.")
+    try:
+        return trip_forecast.compute_point_forecast(
+            dep_utc, [p.model_dump() if hasattr(p, "model_dump") else p.dict() for p in body.points], body.chunk_minutes)
+    except forecast_service.ForecastUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.get("/weather/debug")
+def weather_debug(lat: float = Query(...), lon: float = Query(...), hours: int = Query(12, ge=1, le=48)):
+    """Raw thunder/rain values each provider returns for a point -- use this to see why a reading is 0%."""
+    return forecast_service.debug_thunder(lat, lon, hours)
+
+
 @app.get("/weather/status")
 def weather_status():
     """Which free weather providers are working right now (for debugging/monitoring)."""
