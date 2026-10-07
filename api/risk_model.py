@@ -6,7 +6,12 @@ rule model, not a trained ML probability.
 """
 import config
 
-MODEL_VERSION = "trip_rule_v5_separated_scores"
+MODEL_VERSION = "trip_rule_v6_weighted"
+
+# Overall = weighted blend of the three separated sub-scores (each 0-100).
+W_WEATHER, W_TERRAIN, W_HAZARD = 0.30, 0.30, 0.40
+# Wet weather on steep/fragile ground is worse than either alone.
+INTERACTION = 0.35
 
 
 def _norm(value, cap):
@@ -36,6 +41,7 @@ def score_breakdown(
     past_72h_mm=0,
     rain_probability_pct=0,
     thunderstorm_expected=False,
+    thunder_probability_pct=None,
     current_rain_1h_mm=0,
     forecast_rain_1h_mm=0,
     forecast_precipitation_1h_mm=0,
@@ -53,64 +59,73 @@ def score_breakdown(
     source=None,
     **_extra_forecast_fields,
 ):
-    # trip_forecast.py calls this as score_segment(**weather, ...), and
-    # `weather` (from forecast_service.forecast_for_window) carries a few
-    # descriptive/display-only fields -- forecast_temperature_c,
-    # forecast_weather_code, forecast_soil_moisture, forecast_time,
-    # weather_model -- that this model doesn't score against. Without
-    # **_extra_forecast_fields above, any one of those raised
-    # `TypeError: score_segment() got an unexpected keyword argument`
-    # on every single call, which is why live forecasting was failing
-    # 100% of the time. They're intentionally unused here; add a named
-    # parameter (and fold it into the score below) if one of them
-    # should start affecting risk.
+    # forecast_service.forecast_for_window() also returns display-only fields
+    # (temperature, weather code, soil moisture, source labels...). They are
+    # swallowed by **_extra_forecast_fields so passing the whole forecast dict
+    # in never raises TypeError.
 
-    # ---- 1) WEATHER sub-score (0-100) from the forecast at this segment's ETA.
-    # Wet-ground rain, rain during the trip, intensity at arrival, chance of rain,
-    # thunder, current rain, wind and visibility. Terrain/hazards are NOT mixed in.
-    pre_rain = _norm(
-        float(forecast_to_departure_mm or 0) + 0.7 * float(past_24h_mm or 0) + 0.25 * float(past_72h_mm or 0), 80)
-    trip_rain = _norm(forecast_during_trip_mm, 25)
-    eta_rain = _norm(forecast_rain_1h_mm or forecast_precipitation_1h_mm, 15)
-    pop = _norm(rain_probability_pct, 100)
-    thunder = 100.0 if thunderstorm_expected else 0.0
-    current = _norm(current_rain_1h_mm, 20)
-    wind = _norm(max(float(forecast_wind_kmh or 0), float(forecast_gust_kmh or 0)), 80)
-    visibility = _visibility_risk(forecast_visibility_m)
-    weather_score = min(100.0, 2.0 * (
-        pre_rain * .12 + trip_rain * .08 + eta_rain * .10 +
-        pop * .07 + thunder * .04 + current * .03 + wind * .04 + visibility * .02))
+    # ---- 1) WEATHER sub-score (0-100) from the live forecast at this segment's ETA.
+    # Each component is 0-100. The score is mostly a weighted blend, but the single
+    # worst component also counts, so one serious signal (e.g. a 70% thunder
+    # probability) can't be averaged away by a dozen calm ones.
+    if thunder_probability_pct is None:
+        thunder_probability_pct = 90.0 if thunderstorm_expected else 0.0
+    comps = {
+        "wet_ground": _norm(float(forecast_to_departure_mm or 0) + 0.7 * float(past_24h_mm or 0)
+                            + 0.25 * float(past_72h_mm or 0), 80),
+        "trip_rain": _norm(forecast_during_trip_mm, 25),
+        "eta_rain": _norm(max(float(forecast_rain_1h_mm or 0), float(forecast_precipitation_1h_mm or 0)), 15),
+        "rain_chance": _norm(rain_probability_pct, 100),
+        "thunder": _norm(thunder_probability_pct, 100),
+        "current_rain": _norm(current_rain_1h_mm, 20),
+        "wind": _norm(max(float(forecast_wind_kmh or 0), float(forecast_gust_kmh or 0)), 80),
+        "visibility": _visibility_risk(forecast_visibility_m),
+    }
+    weights = {"wet_ground": .16, "trip_rain": .12, "eta_rain": .16, "rain_chance": .10,
+               "thunder": .22, "current_rain": .04, "wind": .12, "visibility": .08}   # sums to 1.0
+    blended = sum(comps[k] * w for k, w in weights.items())
+    weather_score = min(100.0, 0.75 * blended + 0.25 * max(comps.values()))
 
     # ---- 2) TERRAIN sub-score (0-100): how vulnerable this stretch is.
     slope = _norm(avg_slope_deg, 35)
     terrain_score = min(100.0, (slope * .22 + (100.0 if seasonal_restriction else 0.0) * .09
                                 + (100.0 if has_bridge else 0.0) * .04) / .35)
 
-    # ---- 3) FIELD-HAZARD sub-score (0-100): live reports and alerts.
-    hazard_score = min(100.0, active_alerts * 20.0 + active_hazard_reports * 20.0 + verified_hazard_reports * 30.0)
-
-    # ---- Overall: weather leads; terrain only amplifies it (steep road in dry
-    # weather stays low, steep road in a storm goes severe); hazards add on top
-    # and set floors because a real report overrides a dry forecast.
-    overall = weather_score + 0.30 * terrain_score * (0.4 + weather_score / 100.0) + 0.15 * hazard_score
-    floor, driver_floor = 0.0, None
+    # ---- 3) FIELD-HAZARD sub-score (0-100): live reports and alerts. Severity
+    # floors live here (not in the overall) so the displayed number is the real one.
+    raw_hazard = min(100.0, active_alerts * 20.0 + active_hazard_reports * 20.0 + verified_hazard_reports * 30.0)
+    hazard_floor = 0.0
     if status == "blocked":
-        floor, driver_floor = 95.0, "road blocked"
+        hazard_floor = 100.0
     elif verified_hazard_reports > 0:
-        floor, driver_floor = 80.0, "verified field hazard"
+        hazard_floor = 80.0
     elif active_hazard_reports > 0:
-        floor, driver_floor = 65.0, "field hazard reports"
+        hazard_floor = 50.0
     elif active_alerts >= 2:
-        floor, driver_floor = 60.0, "active alerts"
-    overall = min(100.0, max(overall, floor))
+        hazard_floor = 40.0
+    hazard_score = max(raw_hazard, hazard_floor)
 
-    parts = {"weather": weather_score, "terrain": 0.30 * terrain_score * (0.4 + weather_score / 100.0),
-             "hazards": max(0.15 * hazard_score, floor)}
-    driver = driver_floor if (driver_floor and floor >= weather_score) else max(parts, key=parts.get)
+    # ---- Overall = 30% weather + 30% terrain + 40% field hazards, plus a small
+    # weather x terrain interaction. Different inputs now give different scores.
+    parts = {"weather": W_WEATHER * weather_score, "terrain": W_TERRAIN * terrain_score,
+             "hazards": W_HAZARD * hazard_score}
+    overall = sum(parts.values()) + INTERACTION * weather_score * terrain_score / 100.0
+    overall = min(100.0, overall)
+
+    # ---- Critical overrides: a real road closure / verified report outranks any forecast.
+    override_floor, override_reason = 0.0, None
+    if status == "blocked":
+        override_floor, override_reason = 95.0, "road blocked"
+    elif verified_hazard_reports > 0:
+        override_floor, override_reason = 80.0, "verified field hazard"
+    if override_floor > overall:
+        overall, driver = override_floor, override_reason
+    else:
+        driver = {"weather": "weather", "terrain": "terrain", "hazards": "field hazards"}[max(parts, key=parts.get)]
     return {
-        "overall": round(overall, 1), "weather_score": round(weather_score, 1),
-        "terrain_score": round(terrain_score, 1), "hazard_score": round(max(hazard_score, floor), 1),
-        "driver": {"weather": "weather", "terrain": "terrain", "hazards": "field hazards"}.get(driver, driver),
+        "overall": round(min(100.0, overall), 1), "weather_score": round(weather_score, 1),
+        "terrain_score": round(terrain_score, 1), "hazard_score": round(hazard_score, 1),
+        "driver": driver,
     }
 
 

@@ -24,7 +24,8 @@ import requests
 import config
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+# "complete" (not "compact") is needed for probability_of_thunder / probability_of_precipitation.
+MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 
 PROVIDER_LABELS = {
     "open_meteo": "Open-Meteo",
@@ -113,6 +114,9 @@ def _normalize_open_meteo(data):
         "wind": col("wind_speed_10m"), "gust": col("wind_gusts_10m"), "temp": col("temperature_2m"),
         "code": codes, "soil": col("soil_moisture_0_to_10cm"),
         "thunder": [c is not None and int(c) in (95, 96, 99) for c in codes],
+        # Open-Meteo gives no thunder *probability*, only a WMO code: treat a
+        # thunderstorm code as a high-likelihood signal, otherwise 0.
+        "tprob": [90.0 if (c is not None and int(c) in (95, 96, 99)) else 0.0 for c in codes],
         "has_past": True,
     }
 
@@ -186,21 +190,27 @@ def _normalize_met_no(data):
             block, div = d["next_6_hours"], 6.0
         else:
             block, div = {}, 1.0
-        amount = _fnum(((block.get("details") or {}).get("precipitation_amount")), 0.0) / div
+        det = block.get("details") or {}
+        amount = _fnum(det.get("precipitation_amount"), 0.0) / div
         sym = ((block.get("summary") or {}).get("symbol_code")) or ""
-        pts.append((t, inst, amount, "thunder" in sym))
+        thd = "thunder" in sym
+        pop_v = _fnum(det.get("probability_of_precipitation"))
+        tprob_v = _fnum(det.get("probability_of_thunder"))
+        if tprob_v is None:                      # field missing -> fall back to the symbol
+            tprob_v = 90.0 if thd else 0.0
+        pts.append((t, inst, amount, thd, pop_v, tprob_v))
     pts.sort(key=lambda p: p[0])
 
     # Resample onto an hourly grid (forward-fill) so window sums are comparable
     # with Open-Meteo even where MET Norway switches to 6-hourly steps.
     start = pts[0][0].replace(minute=0, second=0, microsecond=0)
     end = pts[-1][0]
-    times, precip, wind, gust, temp, thunder = [], [], [], [], [], []
+    times, precip, wind, gust, temp, thunder, pop, tprob = [], [], [], [], [], [], [], []
     j, t = 0, start
     while t <= end:
         while j + 1 < len(pts) and pts[j + 1][0] <= t:
             j += 1
-        _, inst, amt, thd = pts[j]
+        _, inst, amt, thd, pop_v, tprob_v = pts[j]
         ws = _fnum(inst.get("wind_speed"))
         wg = _fnum(inst.get("wind_speed_of_gust"))
         times.append(t)
@@ -209,11 +219,13 @@ def _normalize_met_no(data):
         gust.append(wg * 3.6 if wg is not None else (ws * 3.6 * 1.4 if ws is not None else None))
         temp.append(_fnum(inst.get("air_temperature")))
         thunder.append(thd)
+        pop.append(pop_v)
+        tprob.append(max(tprob_v, 90.0) if thd else tprob_v)
         t += timedelta(hours=1)
     n = len(times)
-    return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": [None] * n,
+    return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": pop,
             "vis": [None] * n, "wind": wind, "gust": gust, "temp": temp, "code": [None] * n,
-            "soil": [None] * n, "thunder": thunder, "has_past": False}
+            "soil": [None] * n, "thunder": thunder, "tprob": tprob, "has_past": False}
 
 
 def _fetch_met_no_one(cell):
@@ -274,7 +286,7 @@ def _fetch_openweather_one(cell):
     n = len(times)
     return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": pop, "vis": vis,
             "wind": wind, "gust": gust, "temp": temp, "code": code, "soil": [None] * n, "thunder": thunder,
-            "has_past": False}
+            "tprob": [90.0 if th else 0.0 for th in thunder], "has_past": False}
 
 
 # ------------------------------------------------------------ cache + prefetch
@@ -374,6 +386,11 @@ def _features(series, now, start, end):
     pre = _idx_between(times, now, start)
     trip = _idx_between(times, start, end)
     nxt6 = _idx_between(times, start, start + timedelta(hours=6))
+    # Thunder is judged in a tight window around the segment's ETA (1 h before
+    # to 2 h after the segment), not the whole next 6 h, so it tracks the section.
+    near = _idx_between(times, start - timedelta(hours=1), max(end, start) + timedelta(hours=2)) or [ai]
+    tvals = series.get("tprob") or []
+    thunder_prob = max([float(tvals[i]) for i in near if i < len(tvals) and tvals[i] is not None] or [0.0])
     f = {
         "forecast_to_departure_mm": _sum(series, "precip", pre),
         "forecast_during_trip_mm": _sum(series, "precip", trip),
@@ -387,8 +404,9 @@ def _features(series, now, start, end):
         "forecast_gust_kmh": _at(series, "gust", ai, 0.0),
         "forecast_temperature_c": _at(series, "temp", ai),
         "forecast_soil_moisture": _at(series, "soil", ai),
-        "thunderstorm_expected": any((series["thunder"][i] if i < len(series["thunder"]) else False)
-                                     for i in (nxt6 or [ai])),
+        "thunder_probability_pct": thunder_prob,
+        "thunderstorm_expected": thunder_prob >= 40.0 or any(
+            (series["thunder"][i] if i < len(series["thunder"]) else False) for i in near),
         "forecast_weather_code": _at(series, "code", ai),
         "forecast_time": times[ai].isoformat(),
     }
@@ -471,6 +489,8 @@ def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
         "past_72h_mm": round(blended["past_72h_mm"] or 0.0, 1),
         "rain_probability_pct": round(pop, 1),
         "rain_probability_estimated": pop_estimated,
+        # Safety-first: the highest thunder probability any provider reports.
+        "thunder_probability_pct": round(max(f["thunder_probability_pct"] for f in used.values()), 1),
         "thunderstorm_expected": any(f["thunderstorm_expected"] for f in used.values()),
         "current_rain_1h_mm": round(float(bundle.get("current_rain") or 0.0), 1),
         "forecast_rain_1h_mm": round(blended["forecast_rain_1h_mm"] or 0.0, 1),

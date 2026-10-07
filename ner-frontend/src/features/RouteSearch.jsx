@@ -385,6 +385,7 @@ function RouteResultCard({ opt, index, selected, onSelect }) {
                 {row.segment.weather_score !== undefined && (
                   <div style={{ color: '#888', marginTop: 2, fontSize: 11 }}>
                     Weather {row.segment.weather_score} · Terrain {row.segment.terrain_score} · Field hazards {row.segment.hazard_score}
+                    {row.segment.thunder_probability_pct !== undefined ? ` · Thunder ${Math.round(row.segment.thunder_probability_pct)}%` : ''}
                     {row.segment.risk_driver ? ` — mainly ${row.segment.risk_driver}` : ''}
                   </div>
                 )}

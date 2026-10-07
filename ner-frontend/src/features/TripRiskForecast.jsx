@@ -175,7 +175,8 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
                 </div>
                 {s.weather_score !== undefined && (
                   <div style={{ color: '#888', marginTop: 4, fontSize: 11 }}>
-                    Weather {s.weather_score} · Terrain {s.terrain_score} · Field hazards {s.hazard_score} — mainly {s.risk_driver}
+                    Weather {s.weather_score} · Terrain {s.terrain_score} · Field hazards {s.hazard_score}
+                    {s.thunder_probability_pct !== undefined ? ` · Thunder ${Math.round(s.thunder_probability_pct)}%` : ''} — mainly {s.risk_driver}
                   </div>
                 )}
                 {reasons.map((r, i) => (

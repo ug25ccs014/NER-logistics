@@ -535,7 +535,6 @@ const UI_STRINGS = {
   post_to_board: { en: 'Post to Board', hi: 'बोर्ड पर पोस्ट करें', as: 'ব’ৰ্ডত পোষ্ট কৰক' },
   marked_merged: { en: 'Marked merged — removed from the board.', hi: 'मर्ज के रूप में चिह्नित — बोर्ड से हटा दिया गया।', as: 'একত্ৰিত বুলি চিহ্নিত — ব’ৰ্ডৰ পৰা আঁতৰোৱা হ’ল।' },
   contact_merge: { en: '🔔 Contact to Merge', hi: '🔔 मर्ज के लिए संपर्क करें', as: '🔔 একত্ৰিত কৰিবলৈ যোগাযোগ কৰক' },
-  cancel: { en: 'Cancel', hi: 'रद्द करें', as: 'বাতিল কৰক' },
   finding_drivers: { en: 'Finding drivers on a similar route...', hi: 'समान मार्ग पर ड्राइवर खोजे जा रहे हैं...', as: 'একে পথত থকা চালক বিচাৰি থকা হৈছে...' },
   live_ai_title: { en: 'Live AI hazard detection', hi: 'लाइव AI खतरा पहचान', as: 'লাইভ AI বিপদ চিনাক্তকৰণ' },
   dashcam_feed: { en: 'Dashcam feed', hi: 'डैशकैम फ़ीड', as: 'ডেশ্বকেম ফীড' },

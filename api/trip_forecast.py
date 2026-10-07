@@ -134,7 +134,9 @@ def build_report(props_list, depart_at_utc, journey_minutes, options):
         facts.append("No significant rain is forecast at your estimated arrival times.")
     if past24 >= 10:
         facts.append(f"Up to {round(past24)} mm of rain fell in the last 24 h, so slopes and road edges may still be saturated.")
-    if storms: facts.append(f"Thunderstorm signal on {len(storms)} of {len(props_list)} sections.")
+    if storms:
+        top_thunder = max(p["thunder_probability_pct"] for p in props_list)
+        facts.append(f"Thunderstorm signal on {len(storms)} of {len(props_list)} sections (up to {round(top_thunder)}% thunder probability).")
     if max_gust >= 40: facts.append(f"Wind gusts up to {round(max_gust)} km/h.")
     if min_vis < 5000: facts.append(f"Visibility may drop to {min_vis / 1000:.1f} km.")
     if incidents: facts.append(f"{incidents} active/verified hazard report(s) on the route.")
