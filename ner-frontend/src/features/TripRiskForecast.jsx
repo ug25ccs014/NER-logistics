@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import L from 'leaflet';
 import { api, fetchRealRoutes } from '../api.js';
+import WeatherReportCard from './WeatherReportCard.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { riskLevelIcon } from '../utils/mapIcons.js';
@@ -112,7 +113,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         );
         layersRef.current.push(line);
       });
-      placeRiskMarkers(map, markersRef, chunks);
+      placeRiskMarkers(map, markersRef, chunks, t('forecast_risk'));
       map.fitBounds(L.latLngBounds(route.coords), { padding: [50, 50] });
 
       setStatus(null);
@@ -154,6 +155,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
               {summary.forecastMeta.weather_model}
             </div>
           )}
+          <WeatherReportCard report={summary.forecastMeta?.report} updatedAt={summary.forecastMeta?.generated_at} />
           {summary.nearby?.filter((s) => s.risk_score !== null && s.risk_score !== undefined).map((s) => {
             const c = getRiskColor(s.risk_score, true);
             const reasons = explainRisk(s);
@@ -200,7 +202,7 @@ function reasonsHtml(reasons) {
 
 // Same "one marker per contiguous stretch" behaviour as RouteSearch,
 // so a long risky stretch doesn't get a dozen overlapping icons.
-function placeRiskMarkers(map, markersRef, chunks) {
+function placeRiskMarkers(map, markersRef, chunks, riskLabel) {
   let runStart = null;
   let runSegmentId = null;
 
@@ -212,7 +214,7 @@ function placeRiskMarkers(map, markersRef, chunks) {
     const midPos = midChunk.coords[Math.floor(midChunk.coords.length / 2)];
     const marker = L.marker(midPos, { icon }).addTo(map);
     marker.bindPopup(
-      `<b>${segment.name}</b><br/>{t('forecast_risk')} <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
+      `<b>${segment.name}</b><br/>${riskLabel} <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
         reasonsHtml(explainRisk(segment))
     );
     markersRef.current.push(marker);

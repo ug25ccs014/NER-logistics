@@ -45,17 +45,19 @@ def run_once():
 
             cell = grid_cell(lat, lon)
             if cell in weather_cache:
-                rainfall_24h, rainfall_72h = weather_cache[cell]
+                cond = weather_cache[cell]
             else:
-                rainfall_24h, rainfall_72h = weather.get_rainfall_data(lat, lon)
-                weather_cache[cell] = (rainfall_24h, rainfall_72h)
+                cond = weather.get_conditions(lat, lon)
+                weather_cache[cell] = cond
                 # Only pay the rate-limit delay for an actual fresh API
                 # call, not for segments that reuse a cached cell.
                 time.sleep(config.WEATHER_RATE_LIMIT_DELAY_SEC)
 
+            if cond is None:      # weather unreachable: keep the previous score, never write a fake one
+                continue
+            rainfall_24h, rainfall_72h = cond["past_24h_mm"], cond["past_72h_mm"]
             score = risk_model.score_segment(
-                rainfall_24h_mm=rainfall_24h,
-                rainfall_72h_mm=rainfall_72h,
+                **cond,
                 avg_slope_deg=seg["avg_slope_deg"],
                 seasonal_restriction=seg["seasonal_restriction"],
             )

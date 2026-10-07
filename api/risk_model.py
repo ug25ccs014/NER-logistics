@@ -6,7 +6,7 @@ rule model, not a trained ML probability.
 """
 import config
 
-MODEL_VERSION = "trip_rule_v3_weather_eta"
+MODEL_VERSION = "trip_rule_v4_live_multisource"
 
 
 def _norm(value, cap):
@@ -32,6 +32,8 @@ def score_segment(
     forecast_to_departure_mm=0,
     forecast_during_trip_mm=0,
     forecast_next_6h_mm=0,
+    past_24h_mm=0,
+    past_72h_mm=0,
     rain_probability_pct=0,
     thunderstorm_expected=False,
     current_rain_1h_mm=0,
@@ -66,7 +68,10 @@ def score_segment(
     # Weather: 50 points. The ETA hour is primary; pre-arrival rain matters for
     # saturated/landslide-prone ground, while probability and storms capture
     # forecast uncertainty and acute hazards.
-    pre_rain = _norm(forecast_to_departure_mm, 60)
+    # Wet-ground index: rain still to fall before arrival PLUS rain that already
+    # fell (recent days saturate slopes, so they count at a discount).
+    pre_rain = _norm(
+        float(forecast_to_departure_mm or 0) + 0.7 * float(past_24h_mm or 0) + 0.25 * float(past_72h_mm or 0), 80)
     trip_rain = _norm(forecast_during_trip_mm, 25)
     eta_rain = _norm(forecast_rain_1h_mm or forecast_precipitation_1h_mm, 15)
     pop = _norm(rain_probability_pct, 100)

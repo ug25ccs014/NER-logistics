@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import L from 'leaflet';
 import PlaceAutocomplete from '../components/PlaceAutocomplete.jsx';
@@ -15,6 +15,10 @@ import {
   explainRisk,
 } from '../utils/geo.js';
 import ShipmentMatchesForRoute from './ShipmentMatchesForRoute.jsx';
+import WeatherReportCard from './WeatherReportCard.jsx';
+
+// Re-check live weather this often while a route is open and departing "now".
+const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
 // Ported from findCustomRoute() / renderCustomRouteResults() /
 // renderCustomRouteLines(): resolves From/To, fetches OSRM
@@ -27,6 +31,7 @@ export default function RouteSearch({ onRouteFound }) {
   const { t } = useLanguage();
   const { map } = useMap();
   const { segments, refresh: refreshSegments } = useSegments();
+  const scoresUpdated = segments?.scores_updated_at;
   const { setRouteCoords } = useActiveRoute();
 
   const [fromText, setFromText] = useState('');
@@ -37,6 +42,10 @@ export default function RouteSearch({ onRouteFound }) {
   const [routeOptions, setRouteOptions] = useState([]); // [{ route, nearbySegments, risk, chunks }]
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [forecastStatus, setForecastStatus] = useState(null);
+  const [departAtInput, setDepartAtInput] = useState(''); // '' = leave now; else 'YYYY-MM-DDTHH:mm' local (IST)
+  const [lastSearch, setLastSearch] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const baseOptionsRef = useRef([]);
 
   const routeLayersRef = useRef([]);
   const riskMarkersRef = useRef([]);
@@ -69,7 +78,7 @@ export default function RouteSearch({ onRouteFound }) {
       const midPos = midChunk.coords[Math.floor(midChunk.coords.length / 2)];
       const marker = L.marker(midPos, { icon }).addTo(map);
       marker.bindPopup(
-        `<b>${segment.name_status === 'unnamed' ? t('unnamed_road') : segment.name}</b><br/>Road ID: ${segment.road_code || '—'}<br/>{t('popup_risk_label')} <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
+        `<b>${segment.name_status === 'unnamed' ? t('unnamed_road') : segment.name}</b><br/>Road ID: ${segment.road_code || '—'}<br/>${t('popup_risk_label')} <b>${segment.risk_level.toUpperCase()}</b> (score ${segment.risk_score})` +
           reasonsHtml(explainRisk(segment))
       );
       riskMarkersRef.current.push(marker);
@@ -97,7 +106,7 @@ export default function RouteSearch({ onRouteFound }) {
           const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
           line.bindPopup(
             chunk.segment
-              ? `<b>${chunk.segment.name_status === 'unnamed' ? t('unnamed_road') : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>{t('popup_risk_label')} <b style="color:${chunk.color}">${
+              ? `<b>${chunk.segment.name_status === 'unnamed' ? t('unnamed_road') : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>${t('popup_risk_label')} <b style="color:${chunk.color}">${
                   chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
                 }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
               : 'No risk data for this stretch (unmonitored road)'
@@ -145,72 +154,98 @@ export default function RouteSearch({ onRouteFound }) {
         return { route, nearbySegments, risk, chunks, forecasted: false, forecastMeta: null };
       });
 
-      // Route & Ride now uses the same live forecast engine as Trip Risk Forecast.
-      // The backend evaluates each monitored section at its estimated ETA, so the
-      // risk shown here is not just the static database risk.
-      setForecastStatus('Checking live weather along the route...');
-      const departAt = localIsoMinute(new Date());
-      // Was Promise.all -- every route option (each internally touching
-      // several weather grid cells) fired at once, so a route with e.g.
-      // 3 options could burst 10+ concurrent requests at Open-Meteo in
-      // the same instant. Open-Meteo's free tier rate-limits by burst,
-      // not just daily total, and that's exactly what was tripping the
-      // 429s -- sequential awaits spread the same total work out instead
-      // of firing it all in one spike.
-      const forecastedOptions = [];
-      for (const opt of baseOptions) {
-        if (opt.nearbySegments.length === 0) {
-          forecastedOptions.push(opt);
-          continue;
-        }
-        try {
-          const forecast = await api.forecastSegments(
-            departAt,
-            opt.nearbySegments.map((s) => s.id),
-            Math.round(opt.route.durationMin)
-          );
-          const byId = new Map((forecast.features || []).map((f) => [f.properties.id, f.properties]));
-          const nearbySegments = opt.nearbySegments.map((seg) => {
-            const f = byId.get(seg.id);
-            return f ? { ...seg, ...f } : seg;
-          });
-          forecastedOptions.push({
-            ...opt,
-            nearbySegments,
-            risk: scoreRouteRisk(nearbySegments),
-            chunks: computeRouteRiskChunks(opt.route.coords, nearbySegments),
-            forecasted: true,
-            forecastMeta: forecast,
-          });
-        } catch (err) {
-          // Keep the route usable if weather service is temporarily
-          // unavailable -- but log why, instead of silently falling back
-          // with no trace. Check the browser console for this the next
-          // time "Live forecast unavailable" shows up.
-          console.error('Forecast failed for route option, falling back to current road data:', err);
-          forecastedOptions.push(opt);
-        }
-      }
-
+      baseOptionsRef.current = baseOptions;
+      setLastSearch({ origin, dest });
+      const forecastedOptions = await applyForecast(baseOptions, departAtInput);
       setRouteOptions(forecastedOptions);
       setSelectedIndex(0);
       renderRoute(forecastedOptions, 0);
-      setForecastStatus(forecastedOptions.some((o) => o.forecasted)
-        ? 'Live forecast risk updated for route sections.'
-        // Was 'Live forecast unavailable -- showing current road risk
-        // data.' -- the fallback data underneath is genuinely useful
-        // (per-segment risk, active alerts, terrain), so showing it
-        // alongside a banner that reads as "this is broken" was worse
-        // than just not saying anything and letting the results speak
-        // for themselves. The real error is still logged to the
-        // console above for whenever the Open-Meteo issue gets
-        // revisited.
-        : null);
       setStatus(null);
       onRouteFound?.({ origin, dest });
     } catch (err) {
       setStatus(err.message);
     }
+  };
+
+  // Departure time sent to the backend: "now" unless the user picked one.
+  const departIso = (input) => (input ? `${input}:00` : localIsoMinute(new Date()));
+
+  // Runs the live multi-source forecast for every route option. Options are
+  // done one after another (the backend caches + batches weather cells, so the
+  // 2nd/3rd option are nearly free). If it fails we keep the route usable but
+  // say WHY, instead of silently showing old saved scores.
+  const applyForecast = async (baseOptions, input) => {
+    setForecastStatus('Checking live weather along the route...');
+    const out = [];
+    const errors = [];
+    for (const opt of baseOptions) {
+      if (opt.nearbySegments.length === 0) { out.push(opt); continue; }
+      try {
+        const forecast = await api.forecastSegments(
+          departIso(input),
+          opt.nearbySegments.map((s) => s.id),
+          Math.round(opt.route.durationMin)
+        );
+        const byId = new Map((forecast.features || []).map((f) => [f.properties.id, f.properties]));
+        const nearbySegments = opt.nearbySegments.map((seg) => {
+          const f = byId.get(seg.id);
+          return f ? { ...seg, ...f } : seg;
+        });
+        out.push({
+          ...opt,
+          nearbySegments,
+          risk: scoreRouteRisk(nearbySegments),
+          chunks: computeRouteRiskChunks(opt.route.coords, nearbySegments),
+          forecasted: true,
+          forecastMeta: forecast,
+        });
+      } catch (err) {
+        console.error('Forecast failed for route option:', err);
+        errors.push(err.message);
+        out.push({ ...opt, forecasted: false, forecastMeta: null });
+      }
+    }
+    const ok = out.filter((o) => o.forecasted).length;
+    if (ok > 0) {
+      const when = input ? `departing ${new Date(input).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}` : 'leaving now';
+      setForecastStatus(`Live forecast risk updated (${when}).`);
+    } else if (errors.length) {
+      setForecastStatus(`Live weather unavailable (${errors[0]}). Showing last saved road data instead -- it may be out of date.`);
+    } else {
+      setForecastStatus(null);
+    }
+    return out;
+  };
+
+  // Re-run only the forecast for the current routes (new departure time or periodic refresh).
+  const refreshForecast = async (input = departAtInput) => {
+    if (!baseOptionsRef.current.length || refreshing) return;
+    setRefreshing(true);
+    try {
+      const updated = await applyForecast(baseOptionsRef.current, input);
+      setRouteOptions(updated);
+      const idx = Math.min(selectedIndex, updated.length - 1);
+      renderRoute(updated, idx);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Auto-refresh while a route is open and the trip departs "now".
+  useEffect(() => {
+    if (!routeOptions.length || departAtInput) return undefined;
+    const id = setInterval(() => refreshForecast(''), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeOptions.length, departAtInput, selectedIndex]);
+
+  const pickDeparture = (isoUtc) => {
+    // Convert the suggested UTC instant to the input's local 'YYYY-MM-DDTHH:mm'.
+    const d = new Date(isoUtc);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    const local = d.toISOString().slice(0, 16);
+    setDepartAtInput(local);
+    refreshForecast(local);
   };
 
   const localIsoMinute = (date) => {
@@ -236,8 +271,31 @@ export default function RouteSearch({ onRouteFound }) {
         value={toText}
         onChange={(text, picked) => { setToText(text); setToPlace(picked); }}
       />
+      <label style={{ display: 'block', fontSize: 12, color: '#aaa', margin: '8px 0 4px' }}>
+        Departure time <span style={{ opacity: 0.7 }}>(blank = leave now, live weather)</span>
+      </label>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input
+          type="datetime-local"
+          value={departAtInput}
+          min={nowInputValue()}
+          onChange={(e) => { setDepartAtInput(e.target.value); if (routeOptions.length) refreshForecast(e.target.value); }}
+          style={{ flex: 1 }}
+        />
+        {departAtInput && <button type="button" className="btn" onClick={() => { setDepartAtInput(''); if (routeOptions.length) refreshForecast(''); }}>Now</button>}
+      </div>
       <button className="btn btn-primary" onClick={search}>{t('find_route_btn')}</button>
+      {routeOptions.length > 0 && (
+        <button type="button" className="btn" style={{ marginLeft: 6 }} disabled={refreshing} onClick={() => refreshForecast()}>
+          {refreshing ? 'Updating…' : '↻ Refresh weather'}
+        </button>
+      )}
       {status && <div className="status-line">{status}</div>}
+      {scoresUpdated && (
+        <div className="status-line" style={{ marginTop: 5, fontSize: 11 }}>
+          Saved road scores updated {new Date(scoresUpdated).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}{segments?.scores_stale ? ' (refreshing from live weather…)' : ''}
+        </div>
+      )}
       {forecastStatus && <div className="status-line" style={{ marginTop: 5 }}>{forecastStatus}</div>}
 
       {routeOptions.map((opt, i) => (
@@ -250,11 +308,26 @@ export default function RouteSearch({ onRouteFound }) {
         />
       ))}
 
+      {routeOptions[selectedIndex]?.forecastMeta?.report && (
+        <WeatherReportCard
+          report={routeOptions[selectedIndex].forecastMeta.report}
+          updatedAt={routeOptions[selectedIndex].forecastMeta.generated_at}
+          onPickDeparture={pickDeparture}
+        />
+      )}
+
       {routeOptions.length > 0 && fromPlace && toPlace && (
         <ShipmentMatchesForRoute origin={fromPlace} dest={toPlace} />
       )}
     </div>
   );
+}
+
+// 'YYYY-MM-DDTHH:mm' for the browser's local time (matches datetime-local).
+function nowInputValue() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
 }
 
 function reasonsHtml(reasons) {

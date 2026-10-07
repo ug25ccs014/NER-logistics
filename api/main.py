@@ -14,7 +14,7 @@ app). Exposes:
 Run with:
     uvicorn main:app --reload --port 8000
 """
-from fastapi import FastAPI, HTTPException, Query, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, Depends, UploadFile, File, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -26,6 +26,7 @@ try:
 except ImportError:  # Python <3.9 fallback, shouldn't be hit in practice
     from backports.zoneinfo import ZoneInfo
 import base64
+import threading
 import binascii
 import os
 import uuid
@@ -40,6 +41,7 @@ import config
 import ai_service
 import forecast_service
 import trip_forecast
+import live_risk
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -618,10 +620,43 @@ def me(current: dict = Depends(get_current_account)):
     return {"role": current["role"], "full_name": current["name"]}
 
 
+_refresh_lock = threading.Lock()
+SCORE_STALE_MIN = 20
+
+
+def _background_refresh():
+    if not _refresh_lock.acquire(blocking=False):
+        return  # a refresh is already running
+    try:
+        offset = 0
+        while offset is not None:
+            offset = live_risk.refresh(limit=250, offset=offset)["next_offset"]
+    except Exception as exc:  # never break /segments because weather is down
+        print(f"[live-risk] background refresh failed: {exc}")
+    finally:
+        _refresh_lock.release()
+
+
 @app.get("/segments")
 def get_segments():
-    """GeoJSON FeatureCollection of every road segment with current risk data."""
-    return db.fetch_segments_geojson()
+    """GeoJSON of every road segment with its latest LIVE risk score.
+
+    If the stored scores are older than SCORE_STALE_MIN, a refresh from live
+    weather is started in the background, so the next load is current even
+    when no scheduler is running. Each feature carries risk_computed_at.
+    """
+    data = db.fetch_segments_geojson()
+    stamps = [f["properties"].get("risk_computed_at") for f in data["features"]]
+    newest = max((datetime.fromisoformat(x) for x in stamps if x), default=None)
+    now = datetime.now(timezone.utc)
+    if newest is not None and newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    stale = newest is None or (now - newest) > timedelta(minutes=SCORE_STALE_MIN)
+    if stale:
+        threading.Thread(target=_background_refresh, daemon=True).start()
+    data["scores_updated_at"] = newest.isoformat() if newest else None
+    data["scores_stale"] = stale
+    return data
 
 
 @app.get("/segments/forecast")
@@ -672,6 +707,24 @@ def get_segments_forecast(
         return trip_forecast.compute_forecast_segments(depart_at_utc, ids, journey_minutes=journey_minutes)
     except forecast_service.ForecastUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.get("/weather/status")
+def weather_status():
+    """Which free weather providers are working right now (for debugging/monitoring)."""
+    return forecast_service.provider_health()
+
+
+@app.post("/admin/refresh-risk")
+def admin_refresh_risk(
+    limit: int = Query(250, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    x_cron_token: Optional[str] = Header(None),
+):
+    """Re-score segments from live weather. Called by a free scheduler, guarded by CRON_TOKEN."""
+    if not config.CRON_TOKEN or x_cron_token != config.CRON_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid or missing cron token.")
+    return live_risk.refresh(limit=limit, offset=offset)
 
 
 @app.get("/alerts")

@@ -1,266 +1,484 @@
-"""Route-aware live weather forecasting for planned-trip risk.
+"""Live, multi-source weather forecasting for route risk (100% free providers).
 
-Uses Open-Meteo's continuously updated hourly forecast instead of relying on
-coarse 3-hour buckets. A legacy OpenWeather fallback is retained only when
-its existing server-side key is configured.  Each monitored road segment is scored using
-weather at that segment's estimated arrival time, plus the forecast rain
-between now and arrival (useful for wet/unstable mountain roads).
+Sources (all free, no paid key required):
+  1. Open-Meteo        -- hourly forecast + past 3 days of observed/analysed rain
+                          (batched: many grid cells in ONE request).
+  2. MET Norway (yr.no) -- independent second opinion, hourly, needs only a
+                          descriptive User-Agent.
+  3. OpenWeather        -- optional 3-hourly fallback, used only if a key is set
+                          AND the two sources above both failed.
 
-The provider is server-side only; no weather key is required for the normal
-non-commercial Open-Meteo endpoint.
+What changed vs. the single-provider version
+  * One shared TTL cache across requests (the old per-request dict meant every
+    search re-hit the provider -> 429 -> "forecast unavailable").
+  * Batched Open-Meteo calls + providers fetched in parallel.
+  * Consensus of the available sources, with an agreement/confidence signal.
+  * Stale-on-error: if every provider is down but we fetched a cell recently,
+    serve that (clearly flagged) instead of failing the whole route.
 """
 from datetime import datetime, timedelta, timezone
+import concurrent.futures
+import threading
 import time
 import requests
 import config
 
-BASE_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+
+PROVIDER_LABELS = {
+    "open_meteo": "Open-Meteo",
+    "met_no": "MET Norway",
+    "openweather": "OpenWeather",
+}
+# Relative trust when blending. OpenWeather is only ever used alone (fallback).
+PROVIDER_WEIGHTS = {"open_meteo": 0.6, "met_no": 0.4, "openweather": 1.0}
+
+STALE_MAX_AGE_SEC = 6 * 3600
+OPEN_METEO_BATCH = 40
+
+_CACHE = {}                 # cell -> {"at": epoch, "series": {provider: S}, "current_rain": float}
+_CACHE_LOCK = threading.Lock()
+_FETCH_LOCK = threading.Lock()   # serialises network phases so concurrent requests share one fetch
+_HEALTH = {p: {"ok": None, "last_ok": None, "last_error": None, "last_error_at": None} for p in PROVIDER_LABELS}
+
 
 class ForecastUnavailable(Exception):
     pass
 
 
+# ---------------------------------------------------------------- helpers
 def max_forecastable_at() -> datetime:
-    # Open-Meteo supports forecasts beyond this, but keeping the UI horizon
-    # conservative avoids pretending a far-out trip has the same confidence
-    # as a near-term forecast.
     return datetime.now(timezone.utc) + timedelta(hours=config.FORECAST_MAX_HOURS_AHEAD)
 
 
 def _cell(lat, lon):
     size = config.FORECAST_GRID_SIZE_DEG
-    return (round(float(lat) / size) * size, round(float(lon) / size) * size)
+    return (round(round(float(lat) / size) * size, 4), round(round(float(lon) / size) * size, 4))
 
 
-def _fetch_open_meteo(lat, lon):
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "hourly": ",".join([
-            "temperature_2m",
-            "precipitation",
-            "rain",
-            "showers",
-            "precipitation_probability",
-            "visibility",
-            "wind_speed_10m",
-            "wind_gusts_10m",
-            "weather_code",
-            "soil_moisture_0_to_10cm",
-        ]),
-        "current": ",".join([
-            "temperature_2m",
-            "precipitation",
-            "rain",
-            "showers",
-            "weather_code",
-            "visibility",
-            "wind_speed_10m",
-            "wind_gusts_10m",
-        ]),
-        "timezone": "UTC",
-        "forecast_days": 16,
-        "wind_speed_unit": "kmh",
-        "precipitation_unit": "mm",
+def _mark(provider, ok, err=None):
+    h = _HEALTH[provider]
+    h["ok"] = ok
+    now = datetime.now(timezone.utc).isoformat()
+    if ok:
+        h["last_ok"] = now
+    else:
+        h["last_error"] = str(err)[:200]
+        h["last_error_at"] = now
+
+
+def provider_health():
+    with _CACHE_LOCK:
+        cached = len(_CACHE)
+    return {
+        "providers": {PROVIDER_LABELS[k]: dict(v) for k, v in _HEALTH.items()},
+        "cached_grid_cells": cached,
+        "cache_ttl_seconds": config.FORECAST_CACHE_TTL_SECONDS,
     }
-    # Was 15s -- on a serverless function with a hard total time budget,
-    # one slow call at 15s could eat the whole thing by itself even with
-    # the other segments' cells fetched in parallel (see trip_forecast.py).
-    # 8s is still generous for Open-Meteo, which normally responds in
-    # well under a second.
-    last_exc = None
-    for attempt, backoff in enumerate((0, 1.5)):
+
+
+def _parse_time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc) \
+        if value.endswith("Z") or "+" in value[10:] else datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+
+
+def _fnum(v, default=None):
+    try:
+        return float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+# ---------------------------------------------------- provider: Open-Meteo
+_OM_HOURLY = ["temperature_2m", "precipitation", "rain", "showers", "precipitation_probability",
+              "visibility", "wind_speed_10m", "wind_gusts_10m", "weather_code", "soil_moisture_0_to_10cm"]
+_OM_CURRENT = ["temperature_2m", "precipitation", "rain", "weather_code"]
+
+
+def _normalize_open_meteo(data):
+    h = data.get("hourly") or {}
+    times = [_parse_time(t) for t in h.get("time", [])]
+    if not times:
+        raise ForecastUnavailable("Open-Meteo returned no hourly data.")
+
+    def col(key):
+        vals = h.get(key) or []
+        return [_fnum(vals[i]) if i < len(vals) else None for i in range(len(times))]
+
+    codes = col("weather_code")
+    return {
+        "times": times, "precip": col("precipitation"), "rain": col("rain"), "showers": col("showers"),
+        "pop": col("precipitation_probability"), "vis": col("visibility"),
+        "wind": col("wind_speed_10m"), "gust": col("wind_gusts_10m"), "temp": col("temperature_2m"),
+        "code": codes, "soil": col("soil_moisture_0_to_10cm"),
+        "thunder": [c is not None and int(c) in (95, 96, 99) for c in codes],
+        "has_past": True,
+    }
+
+
+def _open_meteo_request(cells):
+    params = {
+        "latitude": ",".join(str(c[0]) for c in cells),
+        "longitude": ",".join(str(c[1]) for c in cells),
+        "hourly": ",".join(_OM_HOURLY), "current": ",".join(_OM_CURRENT),
+        "timezone": "UTC", "forecast_days": 16, "past_days": 3,
+        "wind_speed_unit": "kmh", "precipitation_unit": "mm",
+    }
+    last = None
+    for backoff in (0, 1.0, 2.5):
         if backoff:
             time.sleep(backoff)
         try:
-            resp = requests.get(BASE_URL, params=params, timeout=8)
+            resp = requests.get(OPEN_METEO_URL, params=params, timeout=7)
         except requests.exceptions.RequestException as exc:
-            raise ForecastUnavailable(f"Weather forecast API call failed: {exc}") from exc
-        if resp.status_code == 429:
-            # The free Open-Meteo endpoint rate-limits by request burst,
-            # not total daily volume, and a route search firing several
-            # concurrent segment/cell lookups at once (one route search
-            # can touch multiple grid cells, and Route & Ride forecasts
-            # every route option) can trip it even well under any daily
-            # cap. A couple of short retries clears this the large
-            # majority of the time; if it's still 429 after 3 tries,
-            # something upstream is actually rate-limiting us for real
-            # and this correctly surfaces as "forecast unavailable"
-            # rather than retrying forever.
-            last_exc = ForecastUnavailable(f"Weather forecast request failed ({resp.status_code}).")
+            last = f"network error: {exc}"
+            continue
+        if resp.status_code == 429 or resp.status_code >= 500:
+            last = f"HTTP {resp.status_code}"
             continue
         if not resp.ok:
-            raise ForecastUnavailable(f"Weather forecast request failed ({resp.status_code}).")
-        data = resp.json()
-        break
-    else:
-        raise last_exc
-
-    if not data.get("hourly", {}).get("time"):
-        raise ForecastUnavailable("Weather provider returned no hourly forecast for this location.")
-    return data
+            raise ForecastUnavailable(f"Open-Meteo HTTP {resp.status_code}")
+        payload = resp.json()
+        return payload if isinstance(payload, list) else [payload]
+    raise ForecastUnavailable(f"Open-Meteo failed ({last})")
 
 
+def _fetch_open_meteo(cells):
+    """Return {cell: (series, current_rain)} for as many cells as succeeded."""
+    out = {}
+    for i in range(0, len(cells), OPEN_METEO_BATCH):
+        chunk = cells[i:i + OPEN_METEO_BATCH]
+        try:
+            payloads = _open_meteo_request(chunk)
+            for cell, data in zip(chunk, payloads):
+                try:
+                    out[cell] = (_normalize_open_meteo(data), _fnum((data.get("current") or {}).get("rain"), 0.0))
+                except ForecastUnavailable:
+                    pass
+            _mark("open_meteo", True)
+        except ForecastUnavailable as exc:
+            _mark("open_meteo", False, exc)
+    return out
 
 
-def _fetch_openweather(lat, lon):
-    """Compatibility fallback for deployments that already have an OWM key."""
-    if not config.OPENWEATHER_API_KEY:
-        raise ForecastUnavailable("No weather provider is reachable and no OPENWEATHER_API_KEY is configured.")
-    url = "https://api.openweathermap.org/data/2.5/forecast"
-    try:
-        resp = requests.get(
-            url,
-            params={"lat": lat, "lon": lon, "appid": config.OPENWEATHER_API_KEY, "units": "metric"},
-            timeout=12,
-        )
-        if not resp.ok:
-            raise ForecastUnavailable(f"Fallback weather provider failed ({resp.status_code}).")
-        buckets = resp.json().get("list") or []
-    except requests.exceptions.RequestException as exc:
-        raise ForecastUnavailable(f"Fallback weather API call failed: {exc}") from exc
+# ------------------------------------------------------ provider: MET Norway
+def _normalize_met_no(data):
+    ts = ((data.get("properties") or {}).get("timeseries")) or []
+    if not ts:
+        raise ForecastUnavailable("MET Norway returned no timeseries.")
+    pts = []
+    for e in ts:
+        t = _parse_time(e["time"])
+        inst = ((e.get("data") or {}).get("instant") or {}).get("details") or {}
+        d = e.get("data") or {}
+        if "next_1_hours" in d:
+            block, div = d["next_1_hours"], 1.0
+        elif "next_6_hours" in d:
+            block, div = d["next_6_hours"], 6.0
+        else:
+            block, div = {}, 1.0
+        amount = _fnum(((block.get("details") or {}).get("precipitation_amount")), 0.0) / div
+        sym = ((block.get("summary") or {}).get("symbol_code")) or ""
+        pts.append((t, inst, amount, "thunder" in sym))
+    pts.sort(key=lambda p: p[0])
+
+    # Resample onto an hourly grid (forward-fill) so window sums are comparable
+    # with Open-Meteo even where MET Norway switches to 6-hourly steps.
+    start = pts[0][0].replace(minute=0, second=0, microsecond=0)
+    end = pts[-1][0]
+    times, precip, wind, gust, temp, thunder = [], [], [], [], [], []
+    j, t = 0, start
+    while t <= end:
+        while j + 1 < len(pts) and pts[j + 1][0] <= t:
+            j += 1
+        _, inst, amt, thd = pts[j]
+        ws = _fnum(inst.get("wind_speed"))
+        wg = _fnum(inst.get("wind_speed_of_gust"))
+        times.append(t)
+        precip.append(amt)
+        wind.append(ws * 3.6 if ws is not None else None)
+        gust.append(wg * 3.6 if wg is not None else (ws * 3.6 * 1.4 if ws is not None else None))
+        temp.append(_fnum(inst.get("air_temperature")))
+        thunder.append(thd)
+        t += timedelta(hours=1)
+    n = len(times)
+    return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": [None] * n,
+            "vis": [None] * n, "wind": wind, "gust": gust, "temp": temp, "code": [None] * n,
+            "soil": [None] * n, "thunder": thunder, "has_past": False}
+
+
+def _fetch_met_no_one(cell):
+    lat, lon = cell
+    headers = {"User-Agent": config.WEATHER_USER_AGENT}
+    resp = requests.get(MET_NO_URL, params={"lat": round(lat, 4), "lon": round(lon, 4)}, headers=headers, timeout=7)
+    if not resp.ok:
+        raise ForecastUnavailable(f"MET Norway HTTP {resp.status_code}")
+    return _normalize_met_no(resp.json())
+
+
+def _fetch_met_no(cells):
+    out = {}
+    if not cells:
+        return out
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(cells))) as pool:
+        futs = {pool.submit(_fetch_met_no_one, c): c for c in cells}
+        errors = []
+        for f in concurrent.futures.as_completed(futs):
+            try:
+                out[futs[f]] = f.result()
+            except (ForecastUnavailable, requests.exceptions.RequestException, KeyError, ValueError) as exc:
+                errors.append(exc)
+    _mark("met_no", bool(out), errors[0] if errors and not out else None)
+    return out
+
+
+# ----------------------------------------------- provider: OpenWeather (optional)
+def _fetch_openweather_one(cell):
+    resp = requests.get("https://api.openweathermap.org/data/2.5/forecast",
+                        params={"lat": cell[0], "lon": cell[1], "appid": config.OPENWEATHER_API_KEY, "units": "metric"},
+                        timeout=8)
+    if not resp.ok:
+        raise ForecastUnavailable(f"OpenWeather HTTP {resp.status_code}")
+    buckets = resp.json().get("list") or []
     if not buckets:
-        raise ForecastUnavailable("Fallback weather provider returned no forecast buckets.")
-    return {"_fallback": "openweather", "list": buckets}
+        raise ForecastUnavailable("OpenWeather returned no buckets.")
+    first = datetime.fromtimestamp(int(buckets[0]["dt"]), tz=timezone.utc)
+    last = datetime.fromtimestamp(int(buckets[-1]["dt"]), tz=timezone.utc) + timedelta(hours=2)
+    times, precip, pop, vis, wind, gust, temp, code, thunder = ([] for _ in range(9))
+    j, t = 0, first
+    while t <= last:
+        while j + 1 < len(buckets) and int(buckets[j + 1]["dt"]) <= t.timestamp():
+            j += 1
+        b = buckets[j]
+        w = (b.get("wind") or {})
+        wid = int(((b.get("weather") or [{}])[0]).get("id") or 0)
+        times.append(t)
+        precip.append(_fnum((b.get("rain") or {}).get("3h"), 0.0) / 3.0)
+        pop.append(_fnum(b.get("pop"), 0.0) * 100)
+        vis.append(_fnum(b.get("visibility")))
+        wind.append((_fnum(w.get("speed"), 0.0)) * 3.6)
+        gust.append((_fnum(w.get("gust"), _fnum(w.get("speed"), 0.0))) * 3.6)
+        temp.append(_fnum((b.get("main") or {}).get("temp")))
+        code.append(wid)
+        thunder.append(200 <= wid <= 232)
+        t += timedelta(hours=1)
+    n = len(times)
+    return {"times": times, "precip": precip, "rain": precip, "showers": [None] * n, "pop": pop, "vis": vis,
+            "wind": wind, "gust": gust, "temp": temp, "code": code, "soil": [None] * n, "thunder": thunder,
+            "has_past": False}
+
+
+# ------------------------------------------------------------ cache + prefetch
+def _fresh(entry):
+    return entry is not None and (time.time() - entry["at"]) < config.FORECAST_CACHE_TTL_SECONDS
+
+
+def prefetch(cells, cache=None):
+    """Ensure every grid cell has a (fresh or stale-but-usable) bundle; fill `cache`."""
+    cache = cache if cache is not None else {}
+    cells = list(dict.fromkeys(cells))
+    with _CACHE_LOCK:
+        need = [c for c in cells if not _fresh(_CACHE.get(c))]
+    if need:
+        with _FETCH_LOCK:
+            # Another request may have fetched these while we waited for the lock.
+            with _CACHE_LOCK:
+                need = [c for c in need if not _fresh(_CACHE.get(c))]
+            if need:
+                _network_fetch(need)
+    with _CACHE_LOCK:
+        for c in cells:
+            entry = _CACHE.get(c)
+            if entry is not None and (time.time() - entry["at"]) < STALE_MAX_AGE_SEC:
+                cache[c] = entry
+    return cache
+
+
+def _network_fetch(cells):
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        om_f = pool.submit(_fetch_open_meteo, cells)
+        mn_f = pool.submit(_fetch_met_no, cells)
+        om, mn = om_f.result(), mn_f.result()
+    now = time.time()
+    missing = []
+    for c in cells:
+        series = {}
+        current_rain = 0.0
+        if c in om:
+            series["open_meteo"], current_rain = om[c]
+        if c in mn:
+            series["met_no"] = mn[c]
+        if not series:
+            missing.append(c)
+        else:
+            results[c] = {"at": now, "series": series, "current_rain": current_rain}
+    if missing and config.OPENWEATHER_API_KEY:
+        for c in missing:
+            try:
+                results[c] = {"at": now, "series": {"openweather": _fetch_openweather_one(c)}, "current_rain": 0.0}
+                _mark("openweather", True)
+            except (ForecastUnavailable, requests.exceptions.RequestException) as exc:
+                _mark("openweather", False, exc)
+    with _CACHE_LOCK:
+        _CACHE.update(results)
 
 
 def _fetch(lat, lon):
-    try:
-        return _fetch_open_meteo(lat, lon)
-    except ForecastUnavailable as primary_error:
-        # Keep the feature usable on networks where Open-Meteo is blocked.
-        # OpenWeather is only used if the existing server-side key is present.
-        if not config.OPENWEATHER_API_KEY:
-            raise primary_error
-        return _fetch_openweather(lat, lon)
+    """Back-compat single-cell fetch used by older callers."""
+    cell = _cell(lat, lon)
+    bundle = prefetch([cell]).get(cell)
+    if bundle is None:
+        raise ForecastUnavailable("All weather providers are currently unreachable and no recent cached forecast exists.")
+    return bundle
 
 
-def _forecast_from_openweather(data, window_start_utc, window_end_utc):
-    buckets = data.get("list", [])
-    def bucket_time(b):
-        return datetime.fromtimestamp(int(b.get("dt", 0)), tz=timezone.utc)
-    arrival = min(buckets, key=lambda b: abs(bucket_time(b) - window_start_utc))
-    near = [b for b in buckets if window_start_utc - timedelta(hours=3) <= bucket_time(b) <= window_start_utc + timedelta(hours=6)]
-    trip = [b for b in buckets if window_start_utc <= bucket_time(b) <= window_end_utc + timedelta(hours=1)]
-    pre = [b for b in buckets if max(datetime.now(timezone.utc), window_start_utc - timedelta(hours=24)) <= bucket_time(b) <= window_start_utc]
-    def rain(b): return float((b.get("rain") or {}).get("3h") or 0.0)
-    weather = arrival.get("weather") or [{}]
-    main = arrival.get("main") or {}
-    wind = arrival.get("wind") or {}
-    return {
-        "forecast_to_departure_mm": round(sum(rain(b) for b in pre), 1),
-        "forecast_during_trip_mm": round(sum(rain(b) for b in trip), 1),
-        "forecast_next_6h_mm": round(sum(rain(b) for b in near), 1),
-        "rain_probability_pct": round(max((float(b.get("pop") or 0) for b in near), default=0) * 100, 1),
-        "thunderstorm_expected": any(200 <= int(w.get("id", 0)) <= 232 for b in near for w in (b.get("weather") or [])),
-        "current_rain_1h_mm": 0.0,
-        "forecast_rain_1h_mm": round(rain(arrival) / 3.0, 1),
-        "forecast_precipitation_1h_mm": round(rain(arrival) / 3.0, 1),
-        "forecast_showers_1h_mm": 0.0,
-        "forecast_visibility_m": round(float(arrival.get("visibility") or 10000), 0),
-        "forecast_wind_kmh": round(float(wind.get("speed") or 0) * 3.6, 1),
-        "forecast_gust_kmh": round(float(wind.get("gust") or wind.get("speed") or 0) * 3.6, 1),
-        "forecast_temperature_c": round(float(main.get("temp") or 0), 1),
-        "forecast_weather_code": int(main.get("weather_id") or weather[0].get("id") or 0),
-        "forecast_soil_moisture": 0.0,
-        "forecast_time": bucket_time(arrival).isoformat(),
-        "source": "OpenWeather 3-hour fallback",
-        "weather_model": "OpenWeather fallback (3-hour forecast)",
-    }
-
-def _parse_time(value):
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
-
-
-def _series_at(hourly, key, idx, default=0.0):
-    values = hourly.get(key) or []
-    try:
-        value = values[idx]
-        return float(value) if value is not None else float(default)
-    except (IndexError, TypeError, ValueError):
-        return float(default)
-
-
+# ------------------------------------------------------------ feature extraction
 def _nearest_index(times, target):
     if not times:
         return None
     return min(range(len(times)), key=lambda i: abs(times[i] - target))
 
 
-def _window_indices(times, start, end):
-    return [i for i, t in enumerate(times) if start <= t <= end]
+def _at(series, key, idx, default=None):
+    vals = series.get(key) or []
+    v = vals[idx] if 0 <= idx < len(vals) else None
+    return default if v is None else float(v)
 
 
-def _thunderstorm(code):
-    # WMO weather codes 95/96/99 represent thunderstorms.
-    return int(code or 0) in {95, 96, 99}
+def _sum(series, key, idxs):
+    return sum((_at(series, key, i, 0.0) or 0.0) for i in idxs)
+
+
+def _idx_between(times, a, b):
+    return [i for i, t in enumerate(times) if a <= t <= b]
+
+
+def _features(series, now, start, end):
+    """Numeric features for one provider's series, or None if it doesn't cover `start`."""
+    times = series["times"]
+    ai = _nearest_index(times, start)
+    if ai is None or abs(times[ai] - start) > timedelta(hours=3):
+        return None
+    pre = _idx_between(times, now, start)
+    trip = _idx_between(times, start, end)
+    nxt6 = _idx_between(times, start, start + timedelta(hours=6))
+    f = {
+        "forecast_to_departure_mm": _sum(series, "precip", pre),
+        "forecast_during_trip_mm": _sum(series, "precip", trip),
+        "forecast_next_6h_mm": _sum(series, "precip", nxt6),
+        "rain_probability_pct": _at(series, "pop", ai),
+        "forecast_rain_1h_mm": _at(series, "rain", ai, 0.0),
+        "forecast_precipitation_1h_mm": _at(series, "precip", ai, 0.0),
+        "forecast_showers_1h_mm": _at(series, "showers", ai, 0.0),
+        "forecast_visibility_m": _at(series, "vis", ai),
+        "forecast_wind_kmh": _at(series, "wind", ai, 0.0),
+        "forecast_gust_kmh": _at(series, "gust", ai, 0.0),
+        "forecast_temperature_c": _at(series, "temp", ai),
+        "forecast_soil_moisture": _at(series, "soil", ai),
+        "thunderstorm_expected": any((series["thunder"][i] if i < len(series["thunder"]) else False)
+                                     for i in (nxt6 or [ai])),
+        "forecast_weather_code": _at(series, "code", ai),
+        "forecast_time": times[ai].isoformat(),
+    }
+    if series.get("has_past"):
+        f["past_24h_mm"] = _sum(series, "precip", _idx_between(times, now - timedelta(hours=24), now))
+        f["past_72h_mm"] = _sum(series, "precip", _idx_between(times, now - timedelta(hours=72), now))
+    else:
+        f["past_24h_mm"] = f["past_72h_mm"] = None
+    return f
+
+
+_BLEND_KEYS = ["forecast_to_departure_mm", "forecast_during_trip_mm", "forecast_next_6h_mm",
+               "rain_probability_pct", "forecast_rain_1h_mm", "forecast_precipitation_1h_mm",
+               "forecast_showers_1h_mm", "forecast_visibility_m", "forecast_wind_kmh", "forecast_gust_kmh",
+               "forecast_temperature_c", "forecast_soil_moisture", "past_24h_mm", "past_72h_mm"]
+
+
+def _blend(per_provider):
+    """Weighted mean of each numeric field over providers that report it."""
+    use = per_provider
+    if len(use) > 1 and "openweather" in use:      # OpenWeather is fallback-only
+        use = {k: v for k, v in use.items() if k != "openweather"}
+    out = {}
+    for key in _BLEND_KEYS:
+        num = den = 0.0
+        for p, f in use.items():
+            if f.get(key) is not None:
+                w = PROVIDER_WEIGHTS[p]
+                num += f[key] * w
+                den += w
+        out[key] = (num / den) if den else None
+    return out, use
+
+
+def _agreement(use):
+    """high / medium / low from how closely providers agree on next-6h rain."""
+    if len(use) < 2:
+        return "single_source", None
+    vals = [f["forecast_next_6h_mm"] for f in use.values()]
+    spread = max(vals) - min(vals)
+    if spread <= 1.0:
+        return "high", round(spread, 1)
+    if spread <= 4.0:
+        return "medium", round(spread, 1)
+    return "low", round(spread, 1)
 
 
 def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
-    """Return hourly forecast features for one route segment.
-
-    window_start_utc is the estimated arrival time at the segment.  The
-    forecast at that hour is the primary weather signal.  Rain forecast from
-    now through arrival is also retained because rainfall before a mountain
-    segment can increase soil saturation and landslide susceptibility.
-    """
+    """Blended forecast features for one road segment at its estimated arrival window."""
     key = _cell(lat, lon)
-    if key not in cache:
-        cache[key] = _fetch(*key)
-    data = cache[key]
-    if data.get("_fallback") == "openweather":
-        return _forecast_from_openweather(data, window_start_utc, window_end_utc)
-    hourly = data["hourly"]
-    times = [_parse_time(t) for t in hourly.get("time", [])]
+    bundle = cache.get(key)
+    if bundle is None:
+        bundle = _fetch(lat, lon)
+        cache[key] = bundle
 
-    arrival_idx = _nearest_index(times, window_start_utc)
-    if arrival_idx is None:
-        raise ForecastUnavailable("Weather provider returned no usable forecast times.")
-
-    # The route can start shortly after 'now'. Do not fabricate historical
-    # rainfall from forecast data; only sum forecast precipitation from now
-    # forward.
     now = datetime.now(timezone.utc)
-    pre_start = now
-    pre_indices = _window_indices(times, pre_start, window_start_utc)
-    trip_indices = _window_indices(times, window_start_utc, window_end_utc)
-    next6_indices = _window_indices(times, window_start_utc, window_start_utc + timedelta(hours=6))
+    per = {}
+    for provider, series in bundle["series"].items():
+        f = _features(series, now, window_start_utc, window_end_utc)
+        if f is not None:
+            per[provider] = f
+    if not per:
+        raise ForecastUnavailable("No weather provider covers the requested departure time.")
 
-    arrival_precip = _series_at(hourly, "precipitation", arrival_idx)
-    arrival_rain = _series_at(hourly, "rain", arrival_idx)
-    arrival_showers = _series_at(hourly, "showers", arrival_idx)
-    arrival_pop = _series_at(hourly, "precipitation_probability", arrival_idx)
-    arrival_visibility = _series_at(hourly, "visibility", arrival_idx)
-    arrival_wind = _series_at(hourly, "wind_speed_10m", arrival_idx)
-    arrival_gust = _series_at(hourly, "wind_gusts_10m", arrival_idx)
-    arrival_temp = _series_at(hourly, "temperature_2m", arrival_idx)
-    arrival_code = int(_series_at(hourly, "weather_code", arrival_idx))
-
-    def sum_field(field, indices):
-        return round(sum(_series_at(hourly, field, i) for i in indices), 1)
-
-    # Soil moisture is a contextual signal; it is reported to the UI but is
-    # deliberately not given a large independent weight to avoid double
-    # counting rainfall and terrain vulnerability.
-    soil = _series_at(hourly, "soil_moisture_0_to_10cm", arrival_idx)
+    blended, used = _blend(per)
+    agreement, spread = _agreement(used)
+    primary = used.get("open_meteo") or next(iter(used.values()))
+    age_min = round((time.time() - bundle["at"]) / 60)
+    pop = blended["rain_probability_pct"]
+    pop_estimated = False
+    if pop is None:  # MET-only: derive a rough chance from the amount (flagged as an estimate)
+        r = blended["forecast_precipitation_1h_mm"] or 0.0
+        pop, pop_estimated = (80.0 if r >= 0.5 else 40.0 if r >= 0.1 else 5.0), True
+    vis = blended["forecast_visibility_m"]
+    labels = [PROVIDER_LABELS[p] for p in used]
 
     return {
-        "forecast_to_departure_mm": sum_field("precipitation", pre_indices),
-        "forecast_during_trip_mm": sum_field("precipitation", trip_indices),
-        "forecast_next_6h_mm": sum_field("precipitation", next6_indices),
-        "rain_probability_pct": round(arrival_pop, 1),
-        "thunderstorm_expected": any(_thunderstorm(_series_at(hourly, "weather_code", i)) for i in next6_indices or [arrival_idx]),
-        "current_rain_1h_mm": round(float((data.get("current") or {}).get("rain") or 0.0), 1),
-        "forecast_rain_1h_mm": round(arrival_rain, 1),
-        "forecast_precipitation_1h_mm": round(arrival_precip, 1),
-        "forecast_showers_1h_mm": round(arrival_showers, 1),
-        "forecast_visibility_m": round(arrival_visibility, 0),
-        "forecast_wind_kmh": round(arrival_wind, 1),
-        "forecast_gust_kmh": round(arrival_gust, 1),
-        "forecast_temperature_c": round(arrival_temp, 1),
-        "forecast_weather_code": arrival_code,
-        "forecast_soil_moisture": round(soil, 3),
-        "forecast_time": times[arrival_idx].isoformat(),
-        "source": "Open-Meteo Best Match hourly forecast",
-        "weather_model": "Open-Meteo Best Match (ECMWF IFS where available)",
+        "forecast_to_departure_mm": round(blended["forecast_to_departure_mm"] or 0.0, 1),
+        "forecast_during_trip_mm": round(blended["forecast_during_trip_mm"] or 0.0, 1),
+        "forecast_next_6h_mm": round(blended["forecast_next_6h_mm"] or 0.0, 1),
+        "past_24h_mm": round(blended["past_24h_mm"] or 0.0, 1),
+        "past_72h_mm": round(blended["past_72h_mm"] or 0.0, 1),
+        "rain_probability_pct": round(pop, 1),
+        "rain_probability_estimated": pop_estimated,
+        "thunderstorm_expected": any(f["thunderstorm_expected"] for f in used.values()),
+        "current_rain_1h_mm": round(float(bundle.get("current_rain") or 0.0), 1),
+        "forecast_rain_1h_mm": round(blended["forecast_rain_1h_mm"] or 0.0, 1),
+        "forecast_precipitation_1h_mm": round(blended["forecast_precipitation_1h_mm"] or 0.0, 1),
+        "forecast_showers_1h_mm": round(blended["forecast_showers_1h_mm"] or 0.0, 1),
+        "forecast_visibility_m": round(vis, 0) if vis is not None else 10000,
+        "forecast_wind_kmh": round(blended["forecast_wind_kmh"] or 0.0, 1),
+        "forecast_gust_kmh": round(blended["forecast_gust_kmh"] or 0.0, 1),
+        "forecast_temperature_c": round(blended["forecast_temperature_c"], 1) if blended["forecast_temperature_c"] is not None else None,
+        "forecast_weather_code": int(primary["forecast_weather_code"]) if primary.get("forecast_weather_code") is not None else None,
+        "forecast_soil_moisture": round(blended["forecast_soil_moisture"], 3) if blended["forecast_soil_moisture"] is not None else None,
+        "forecast_time": primary["forecast_time"],
+        "source": " + ".join(labels) + (" (cached, may be outdated)" if age_min * 60 > config.FORECAST_CACHE_TTL_SECONDS * 2 else ""),
+        "weather_model": " + ".join(labels) + " consensus" if len(labels) > 1 else f"{labels[0]} forecast",
+        "sources": labels,
+        "source_agreement": agreement,
+        "rain_spread_mm": spread,
+        "data_age_min": age_min,
     }

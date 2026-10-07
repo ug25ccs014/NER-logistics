@@ -100,7 +100,7 @@ FORECAST_MAX_HOURS_AHEAD = int(os.getenv("FORECAST_MAX_HOURS_AHEAD", "360"))
 # grid cell -- without a shared cache, a single search can burst 15-25+
 # simultaneous outbound calls to Open-Meteo and trip its rate limit (429),
 # which is what previously surfaced as "Weather forecast request failed".
-FORECAST_CACHE_TTL_SECONDS = int(os.getenv("FORECAST_CACHE_TTL_SECONDS", "300"))
+FORECAST_CACHE_TTL_SECONDS = int(os.getenv("FORECAST_CACHE_TTL_SECONDS", "600"))
 # Retries specifically for 429 (rate limited) responses, with backoff.
 FORECAST_RATE_LIMIT_RETRIES = int(os.getenv("FORECAST_RATE_LIMIT_RETRIES", "3"))
 # Same rule_v1 weights/thresholds as risk_engine/config.py, duplicated
@@ -113,3 +113,17 @@ WEIGHT_SEASONAL_FLAG = 0.10
 THRESHOLD_MODERATE = 30
 THRESHOLD_HIGH = 55
 THRESHOLD_SEVERE = 75
+
+
+# ------------------------------------------------------------------
+# Live weather (free providers)
+# ------------------------------------------------------------------
+# MET Norway (yr.no) requires an identifying User-Agent. Put your project name
+# and a contact email/URL here -- requests without one get blocked.
+WEATHER_USER_AGENT = os.getenv("WEATHER_USER_AGENT", "NER-Logistics/1.0 (set WEATHER_USER_AGENT in .env)")
+# Shared secret for POST /admin/refresh-risk, called by a free scheduler
+# (GitHub Actions cron / cron-job.org) because serverless hosts can't run a
+# background loop. Leave empty to disable the endpoint.
+CRON_TOKEN = os.getenv("CRON_TOKEN", "")
+# How many days of old risk_scores rows to keep (table grows every refresh).
+RISK_SCORE_RETENTION_DAYS = int(os.getenv("RISK_SCORE_RETENTION_DAYS", "7"))

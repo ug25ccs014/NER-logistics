@@ -1530,3 +1530,69 @@ def review_road_name_submission(submission_id, approve, reviewer_account_id=None
         conn.close()
 
     return {"id": submission_id, "status": new_status, "segment_id": segment_id}
+
+
+# ------------------------------------------------------------------
+# Live risk refresh (used by live_risk.py / POST /admin/refresh-risk)
+# ------------------------------------------------------------------
+def fetch_segment_ids_page(limit, offset):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM road_segments ORDER BY id LIMIT %s OFFSET %s;", (limit, offset))
+            ids = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM road_segments;")
+            total = cur.fetchone()[0]
+        return ids, total
+    finally:
+        conn.close()
+
+
+def insert_risk_scores_bulk(rows):
+    """rows: (segment_id, risk_score, rain24, rain72, risk_level, model_version)"""
+    if not rows:
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO risk_scores (segment_id, risk_score, rainfall_24h_mm, rainfall_72h_mm, risk_level, model_version) VALUES %s",
+                rows,
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def sync_model_alerts(fire, clear):
+    """fire: [(segment_id, severity, message)] ; clear: [segment_id]. One 'high_risk' alert per segment."""
+    conn = get_connection()
+    created = 0
+    try:
+        with conn.cursor() as cur:
+            for seg_id, severity, message in fire:
+                cur.execute("SELECT 1 FROM alerts WHERE segment_id=%s AND alert_type='high_risk' AND resolved_at IS NULL LIMIT 1;", (seg_id,))
+                if cur.fetchone() is None:
+                    cur.execute(
+                        "INSERT INTO alerts (segment_id, alert_type, severity, message, source) VALUES (%s,'high_risk',%s,%s,'risk_model');",
+                        (seg_id, severity, message))
+                    created += 1
+            if clear:
+                cur.execute(
+                    "UPDATE alerts SET resolved_at = now() WHERE segment_id = ANY(%s) AND alert_type='high_risk' AND source='risk_model' AND resolved_at IS NULL;",
+                    (list(clear),))
+        conn.commit()
+        return created
+    finally:
+        conn.close()
+
+
+def prune_old_risk_scores(days):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM risk_scores WHERE computed_at < now() - (%s || ' days')::interval;", (str(int(days)),))
+        conn.commit()
+    finally:
+        conn.close()

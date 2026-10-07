@@ -1,59 +1,43 @@
-"""
-Fetches rainfall data from OpenWeatherMap for a given lat/lon.
+"""Live conditions for the standalone risk engine (free Open-Meteo, no key).
 
-Uses the free "Current Weather" + "5 day / 3 hour forecast" endpoints
-to approximate 24h and 72h cumulative rainfall (OpenWeatherMap's free
-tier doesn't give true historical rainfall, so we approximate using
-recent forecast/current data -- good enough for a hackathon demo;
-swap in a paid historical API or IMD data for production).
+Returns observed/analysed rain for the last 24h/72h plus current and next-3h
+conditions, in the field names risk_model.score_segment() expects.
+Falls back to None (caller skips the segment) rather than inventing zeros.
 """
+from datetime import datetime, timezone
 import requests
-import config
 
-BASE_URL = "https://api.openweathermap.org/data/2.5"
+URL = "https://api.open-meteo.com/v1/forecast"
 
 
-def get_rainfall_data(lat, lon):
-    """
-    Returns (rainfall_24h_mm, rainfall_72h_mm) estimated for the
-    given coordinates. Falls back to (0, 0) if the API call fails
-    or no API key is configured, so the pipeline never crashes.
-    """
-    if not config.OPENWEATHER_API_KEY:
-        print("  [warn] No OPENWEATHER_API_KEY set -- using 0mm rainfall (demo mode).")
-        return 0.0, 0.0
-
+def get_conditions(lat, lon):
+    params = {
+        "latitude": lat, "longitude": lon, "timezone": "UTC", "past_days": 3, "forecast_days": 1,
+        "hourly": "precipitation,precipitation_probability,visibility,wind_speed_10m,wind_gusts_10m,weather_code",
+        "wind_speed_unit": "kmh",
+    }
     try:
-        # Current weather gives "rain" for the last 1h/3h if it's raining now.
-        current_resp = requests.get(
-            f"{BASE_URL}/weather",
-            params={"lat": lat, "lon": lon, "appid": config.OPENWEATHER_API_KEY, "units": "metric"},
-            timeout=10,
-        )
-        current_resp.raise_for_status()
-        current = current_resp.json()
-        current_rain_3h = current.get("rain", {}).get("3h", current.get("rain", {}).get("1h", 0) * 3)
-
-        # 5-day/3-hour forecast includes recent-past-adjacent 3h buckets
-        # we use it here as a proxy for recent rainfall trend.
-        forecast_resp = requests.get(
-            f"{BASE_URL}/forecast",
-            params={"lat": lat, "lon": lon, "appid": config.OPENWEATHER_API_KEY, "units": "metric"},
-            timeout=10,
-        )
-        forecast_resp.raise_for_status()
-        forecast = forecast_resp.json()
-
-        # Sum rainfall across the next several 3h buckets as a stand-in
-        # signal for regional rainfall intensity (proxy, not true history).
-        buckets = forecast.get("list", [])[:8]  # ~24h of 3h buckets
-        rainfall_24h = sum(b.get("rain", {}).get("3h", 0) for b in buckets) + current_rain_3h
-
-        buckets_72h = forecast.get("list", [])[:24]  # ~72h of 3h buckets (forecast max ~5 days)
-        rainfall_72h = sum(b.get("rain", {}).get("3h", 0) for b in buckets_72h) + current_rain_3h
-
-        return round(rainfall_24h, 1), round(rainfall_72h, 1)
-
-    except requests.exceptions.RequestException as e:
-        print(f"  [warn] Weather API call failed ({e}) -- using 0mm rainfall.")
-        return 0.0, 0.0
+        r = requests.get(URL, params=params, timeout=10)
+        r.raise_for_status()
+        h = r.json()["hourly"]
+    except (requests.exceptions.RequestException, KeyError, ValueError) as exc:
+        print(f"  [warn] weather fetch failed ({exc}) -- skipping this cell.")
+        return None
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
+    times = h["time"]
+    i = max(0, min(range(len(times)), key=lambda k: abs(datetime.fromisoformat(times[k]) - datetime.fromisoformat(now))))
+    v = lambda key, k, d=0.0: (h[key][k] if 0 <= k < len(h[key]) and h[key][k] is not None else d)
+    rain_now = v("precipitation", i)
+    return {
+        "past_24h_mm": round(sum(v("precipitation", k) for k in range(max(0, i - 23), i + 1)), 1),
+        "past_72h_mm": round(sum(v("precipitation", k) for k in range(max(0, i - 71), i + 1)), 1),
+        "forecast_during_trip_mm": round(sum(v("precipitation", k) for k in range(i, i + 3)), 1),
+        "forecast_next_6h_mm": round(sum(v("precipitation", k) for k in range(i, i + 6)), 1),
+        "current_rain_1h_mm": rain_now,
+        "forecast_rain_1h_mm": rain_now,
+        "rain_probability_pct": max(v("precipitation_probability", k) for k in range(i, i + 3)),
+        "thunderstorm_expected": any(int(v("weather_code", k)) in (95, 96, 99) for k in range(i, i + 6)),
+        "forecast_visibility_m": v("visibility", i, 10000),
+        "forecast_wind_kmh": v("wind_speed_10m", i),
+        "forecast_gust_kmh": v("wind_gusts_10m", i),
+    }

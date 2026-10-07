@@ -23,7 +23,12 @@ export function SegmentsProvider({ children }) {
         return null;
       });
 
-  useEffect(() => { refresh(); }, []);
+  // Re-pull every 5 min so map/route scores track the server's live re-scoring.
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return <SegmentsContext.Provider value={{ segments, error, refresh }}>{children}</SegmentsContext.Provider>;
 }

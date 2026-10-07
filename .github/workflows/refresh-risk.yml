@@ -1,0 +1,21 @@
+# Free scheduler: re-scores every road segment from live weather every 30 min.
+# Setup: repo Settings -> Secrets -> add API_URL (e.g. https://your-api.vercel.app) and CRON_TOKEN
+# (same value as CRON_TOKEN in the API's environment).
+name: refresh-risk
+on:
+  schedule: [{ cron: "*/30 * * * *" }]
+  workflow_dispatch: {}
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh in pages until done
+        run: |
+          offset=0
+          while [ "$offset" != "null" ]; do
+            out=$(curl -sS --fail -X POST -H "X-Cron-Token: ${{ secrets.CRON_TOKEN }}" \
+              "${{ secrets.API_URL }}/admin/refresh-risk?limit=250&offset=$offset")
+            echo "$out"
+            offset=$(echo "$out" | python3 -c "import sys,json;print(json.load(sys.stdin)['next_offset'])")
+            [ "$offset" = "None" ] && offset=null
+          done
