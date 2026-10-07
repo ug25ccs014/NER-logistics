@@ -1,5 +1,5 @@
 import React from 'react';
-import { getRiskColor } from '../utils/geo.js';
+import { getRiskColor, fmtIstTime } from '../utils/geo.js';
 
 // Auto-generated weather report for a route (built server-side from live
 // multi-source forecasts -- see api/trip_forecast.py build_report).
@@ -47,6 +47,15 @@ export default function WeatherReportCard({ report, onPickDeparture, updatedAt }
         <ul style={{ margin: '3px 0 0', paddingLeft: 18 }}>
           {report.advice.map((a, i) => <li key={i}>{a}</li>)}
         </ul>
+      </div>
+
+      <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, fontSize: 11, color: '#bbb', background: 'rgba(255,255,255,0.05)' }}>
+        <b>Live forecast</b> · Provider: {report.sources.join(' + ') || '—'}
+        <br />
+        Evaluated {fmtIstTime(report.evaluated_at || report.generated_at) || '—'}
+        {fmtIstTime(report.forecast_fetched_at) ? ` · data fetched ${fmtIstTime(report.forecast_fetched_at)}` : ''}
+        {fmtIstTime(report.forecast_updated_at) ? ` · provider updated ${fmtIstTime(report.forecast_updated_at)}` : ''}
+        {fmtIstTime(report.forecast_valid_until) ? ` · valid until ${fmtIstTime(report.forecast_valid_until)}` : ''} (IST)
       </div>
 
       <div style={{ marginTop: 8, fontSize: 11, color: '#888' }}>

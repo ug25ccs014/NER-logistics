@@ -17,6 +17,7 @@ What changed vs. the single-provider version
     serve that (clearly flagged) instead of failing the whole route.
 """
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 import concurrent.futures
 import threading
 import time
@@ -256,13 +257,45 @@ def _normalize_met_no(data):
             "tprob_field_present": tfield_seen}
 
 
+_MET_CACHE = {}   # cell -> {"series", "expires", "last_modified"} (MET terms: honour Expires / If-Modified-Since)
+
+
+def _http_date(value):
+    try:
+        return parsedate_to_datetime(value).astimezone(timezone.utc) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _fetch_met_no_one(cell):
     lat, lon = cell
+    now = datetime.now(timezone.utc)
+    with _CACHE_LOCK:
+        cached = _MET_CACHE.get(cell)
+    # MET asks clients not to re-request before the response's Expires time.
+    if cached and cached["expires"] and now < cached["expires"]:
+        return cached["series"]
     headers = {"User-Agent": config.WEATHER_USER_AGENT}
+    if cached and cached["last_modified_raw"]:
+        headers["If-Modified-Since"] = cached["last_modified_raw"]
     resp = requests.get(MET_NO_URL, params={"lat": round(lat, 4), "lon": round(lon, 4)}, headers=headers, timeout=7)
+    if resp.status_code == 304 and cached:
+        exp = _http_date(resp.headers.get("Expires")) or (now + timedelta(minutes=10))
+        cached["expires"] = exp
+        cached["series"]["_meta"]["expires"] = exp.isoformat()
+        cached["series"]["_meta"]["checked_at"] = now.isoformat()
+        return cached["series"]
     if not resp.ok:
         raise ForecastUnavailable(f"MET Norway HTTP {resp.status_code}")
-    return _normalize_met_no(resp.json())
+    series = _normalize_met_no(resp.json())
+    exp = _http_date(resp.headers.get("Expires")) or (now + timedelta(minutes=10))
+    lm_raw = resp.headers.get("Last-Modified")
+    lm = _http_date(lm_raw)
+    series["_meta"] = {"expires": exp.isoformat(), "last_modified": lm.isoformat() if lm else None,
+                       "fetched_at": now.isoformat(), "checked_at": now.isoformat()}
+    with _CACHE_LOCK:
+        _MET_CACHE[cell] = {"series": series, "expires": exp, "last_modified_raw": lm_raw}
+    return series
 
 
 def _fetch_met_no(cells):
@@ -356,6 +389,8 @@ def _network_fetch(cells):
         current_rain = 0.0
         if c in om:
             series["open_meteo"], current_rain = om[c]
+            series["open_meteo"]["_meta"] = {"expires": None, "last_modified": None,
+                                             "fetched_at": datetime.now(timezone.utc).isoformat()}
         if c in mn:
             series["met_no"] = mn[c]
         results[c] = {"at": now, "series": series, "current_rain": current_rain}
@@ -511,6 +546,10 @@ def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
         pop, pop_estimated = (80.0 if r >= 0.5 else 40.0 if r >= 0.1 else 5.0), True
     vis = blended["forecast_visibility_m"]
     labels = [PROVIDER_LABELS[p] for p in used]
+    metas = [bundle["series"][p].get("_meta") or {} for p in used]
+    fetched = [m.get("fetched_at") for m in metas if m.get("fetched_at")]
+    updated = [m.get("last_modified") or m.get("fetched_at") for m in metas if (m.get("last_modified") or m.get("fetched_at"))]
+    valid_until = [m["expires"] for m in metas if m.get("expires")]
 
     return {
         "forecast_to_departure_mm": round(blended["forecast_to_departure_mm"] or 0.0, 1),
@@ -543,6 +582,11 @@ def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
         "source_agreement": agreement,
         "rain_spread_mm": spread,
         "data_age_min": age_min,
+        # Freshness provenance (ISO, UTC): when we pulled it, when the provider says it
+        # last changed, and when the provider says it should next be re-requested.
+        "forecast_fetched_at": min(fetched) if fetched else datetime.fromtimestamp(bundle["at"], timezone.utc).isoformat(),
+        "forecast_updated_at": min(updated) if updated else None,
+        "forecast_valid_until": min(valid_until) if valid_until else None,
     }
 
 

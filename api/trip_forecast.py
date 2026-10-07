@@ -190,6 +190,10 @@ def build_report(props_list, depart_at_utc, journey_minutes, options):
         "facts": facts, "advice": advice,
         "confidence": confidence, "confidence_note": conf_note,
         "sources": sources, "data_age_min": stale,
+        "forecast_fetched_at": min((p["forecast_fetched_at"] for p in props_list), default=None),
+        "forecast_updated_at": min((p["forecast_updated_at"] for p in props_list if p.get("forecast_updated_at")), default=None),
+        "forecast_valid_until": min((p["forecast_valid_until"] for p in props_list if p.get("forecast_valid_until")), default=None),
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
         "departure_options": options, "departure_suggestion": suggestion,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

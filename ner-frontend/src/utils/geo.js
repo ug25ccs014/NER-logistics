@@ -187,18 +187,28 @@ export async function fillGapChunks(chunks, { departIso, durationMin, fetchPoint
   }
 }
 
+// "5:02 pm" in India time, from an ISO timestamp.
+export function fmtIstTime(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+}
+
 // One-line score breakdown. Unmonitored (estimated) stretches don't pretend
 // to know field hazards or, without slope data, terrain.
 export function breakdownText(s) {
   if (s.weather_score === undefined) return '';
+  const eta = fmtIstTime(s.forecast_arrival);
+  const etaTxt = eta ? ` · ETA ${eta}` : '';
   const thunder = s.thunder_probability_pct === undefined ? ''
     : s.thunder_data_available === false ? ' · Thunder n/a (no provider data)'
     : ` · Thunder ${Math.round(s.thunder_probability_pct)}%${s.thunder_source ? ` (${s.thunder_source})` : ''}`;
   if (s.estimated) {
     const terrain = s.terrain_known ? `Terrain estimate ${s.terrain_score}` : 'Terrain unknown';
-    return `Weather ${s.weather_score} · ${terrain}${thunder} · Field hazards not monitored`;
+    return `Weather ${s.weather_score} · ${terrain}${thunder} · Field hazards not monitored${etaTxt}`;
   }
-  return `Weather ${s.weather_score} · Terrain ${s.terrain_score} · Field hazards ${s.hazard_score}${thunder}${s.risk_driver ? ` — mainly ${s.risk_driver}` : ''}`;
+  return `Weather ${s.weather_score} · Terrain ${s.terrain_score} · Field hazards ${s.hazard_score}${thunder}${etaTxt}${s.risk_driver ? ` — mainly ${s.risk_driver}` : ''}`;
 }
 
 // Turns raw contributing factors into human-readable reasons, e.g.
