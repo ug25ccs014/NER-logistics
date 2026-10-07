@@ -340,7 +340,7 @@ function reasonsHtml(reasons) {
 function RouteResultCard({ opt, index, selected, onSelect }) {
   const { t } = useLanguage();
   const { route, risk, nearbySegments, chunks } = opt;
-  const riskLabel = !risk.hasData ? t('risk_no_data') : t('risk_level_score_template').replace('{level}', t(`risk_level_${risk.level}`) || risk.level).replace('{score}', risk.score);
+  const riskLabel = !risk.hasData ? t('risk_no_data') : 'Overall: ' + t('risk_level_score_template').replace('{level}', t(`risk_level_${risk.level}`) || risk.level).replace('{score}', risk.score);
   const riskMode = opt.forecasted ? t('live_forecast') : t('current_road_data');
   const riskColor = getRiskColor(risk.score, risk.hasData);
 
@@ -382,6 +382,12 @@ function RouteResultCard({ opt, index, selected, onSelect }) {
                   <span>{row.segment.name_status === 'unnamed' ? t('unnamed_road') : row.segment.name}{row.segment.road_code ? ` · ${row.segment.road_code}` : ''}</span>
                   <span style={{ color: c }}>{row.segment.risk_level ? row.segment.risk_level.toUpperCase() : t('risk_level_na')} ({row.segment.risk_score})</span>
                 </div>
+                {row.segment.weather_score !== undefined && (
+                  <div style={{ color: '#888', marginTop: 2, fontSize: 11 }}>
+                    Weather {row.segment.weather_score} · Terrain {row.segment.terrain_score} · Field hazards {row.segment.hazard_score}
+                    {row.segment.risk_driver ? ` — mainly ${row.segment.risk_driver}` : ''}
+                  </div>
+                )}
                 {reasons.length > 0 && <div style={{ color: '#999', marginTop: 2 }}>{reasons[0]}</div>}
               </div>
             );

@@ -32,7 +32,7 @@ PROVIDER_LABELS = {
     "openweather": "OpenWeather",
 }
 # Relative trust when blending. OpenWeather is only ever used alone (fallback).
-PROVIDER_WEIGHTS = {"open_meteo": 0.6, "met_no": 0.4, "openweather": 1.0}
+PROVIDER_WEIGHTS = {"open_meteo": 0.6, "met_no": 0.4, "openweather": 0.5}
 
 STALE_MAX_AGE_SEC = 6 * 3600
 OPEN_METEO_BATCH = 40
@@ -93,7 +93,7 @@ def _fnum(v, default=None):
 # ---------------------------------------------------- provider: Open-Meteo
 _OM_HOURLY = ["temperature_2m", "precipitation", "rain", "showers", "precipitation_probability",
               "visibility", "wind_speed_10m", "wind_gusts_10m", "weather_code", "soil_moisture_0_to_10cm"]
-_OM_CURRENT = ["temperature_2m", "precipitation", "rain", "weather_code"]
+_OM_CURRENT = ["rain"]
 
 
 def _normalize_open_meteo(data):
@@ -117,16 +117,22 @@ def _normalize_open_meteo(data):
     }
 
 
+_OM_BLOCKED_UNTIL = 0.0
+
+
 def _open_meteo_request(cells):
+    global _OM_BLOCKED_UNTIL
+    if time.time() < _OM_BLOCKED_UNTIL:
+        raise ForecastUnavailable("Open-Meteo rate-limited (HTTP 429); pausing calls briefly")
     params = {
         "latitude": ",".join(str(c[0]) for c in cells),
         "longitude": ",".join(str(c[1]) for c in cells),
         "hourly": ",".join(_OM_HOURLY), "current": ",".join(_OM_CURRENT),
-        "timezone": "UTC", "forecast_days": 16, "past_days": 3,
+        "timezone": "UTC", "forecast_days": 10, "past_days": 3,
         "wind_speed_unit": "kmh", "precipitation_unit": "mm",
     }
     last = None
-    for backoff in (0, 1.0, 2.5):
+    for backoff in (0, 1.0):
         if backoff:
             time.sleep(backoff)
         try:
@@ -141,6 +147,8 @@ def _open_meteo_request(cells):
             raise ForecastUnavailable(f"Open-Meteo HTTP {resp.status_code}")
         payload = resp.json()
         return payload if isinstance(payload, list) else [payload]
+    if last and "429" in last:
+        _OM_BLOCKED_UNTIL = time.time() + 120
     raise ForecastUnavailable(f"Open-Meteo failed ({last})")
 
 
@@ -310,17 +318,19 @@ def _network_fetch(cells):
             series["open_meteo"], current_rain = om[c]
         if c in mn:
             series["met_no"] = mn[c]
-        if not series:
+        results[c] = {"at": now, "series": series, "current_rain": current_rain}
+        if "open_meteo" not in series:
             missing.append(c)
-        else:
-            results[c] = {"at": now, "series": series, "current_rain": current_rain}
+    # Open-Meteo missing for a cell (e.g. rate-limited): add OpenWeather as the
+    # second opinion so the route still gets a cross-checked forecast.
     if missing and config.OPENWEATHER_API_KEY:
         for c in missing:
             try:
-                results[c] = {"at": now, "series": {"openweather": _fetch_openweather_one(c)}, "current_rain": 0.0}
+                results[c]["series"]["openweather"] = _fetch_openweather_one(c)
                 _mark("openweather", True)
-            except (ForecastUnavailable, requests.exceptions.RequestException) as exc:
+            except (ForecastUnavailable, requests.exceptions.RequestException, KeyError, ValueError) as exc:
                 _mark("openweather", False, exc)
+    results = {c: r for c, r in results.items() if r["series"]}
     with _CACHE_LOCK:
         _CACHE.update(results)
 
@@ -399,8 +409,6 @@ _BLEND_KEYS = ["forecast_to_departure_mm", "forecast_during_trip_mm", "forecast_
 def _blend(per_provider):
     """Weighted mean of each numeric field over providers that report it."""
     use = per_provider
-    if len(use) > 1 and "openweather" in use:      # OpenWeather is fallback-only
-        use = {k: v for k, v in use.items() if k != "openweather"}
     out = {}
     for key in _BLEND_KEYS:
         num = den = 0.0

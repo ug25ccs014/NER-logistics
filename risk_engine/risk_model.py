@@ -6,7 +6,7 @@ rule model, not a trained ML probability.
 """
 import config
 
-MODEL_VERSION = "trip_rule_v4_live_multisource"
+MODEL_VERSION = "trip_rule_v5_separated_scores"
 
 
 def _norm(value, cap):
@@ -28,7 +28,7 @@ def _visibility_risk(meters):
     return max(0.0, min(100.0, (10000.0 - m) / 9500.0 * 100.0))
 
 
-def score_segment(
+def score_breakdown(
     forecast_to_departure_mm=0,
     forecast_during_trip_mm=0,
     forecast_next_6h_mm=0,
@@ -65,11 +65,9 @@ def score_segment(
     # parameter (and fold it into the score below) if one of them
     # should start affecting risk.
 
-    # Weather: 50 points. The ETA hour is primary; pre-arrival rain matters for
-    # saturated/landslide-prone ground, while probability and storms capture
-    # forecast uncertainty and acute hazards.
-    # Wet-ground index: rain still to fall before arrival PLUS rain that already
-    # fell (recent days saturate slopes, so they count at a discount).
+    # ---- 1) WEATHER sub-score (0-100) from the forecast at this segment's ETA.
+    # Wet-ground rain, rain during the trip, intensity at arrival, chance of rain,
+    # thunder, current rain, wind and visibility. Terrain/hazards are NOT mixed in.
     pre_rain = _norm(
         float(forecast_to_departure_mm or 0) + 0.7 * float(past_24h_mm or 0) + 0.25 * float(past_72h_mm or 0), 80)
     trip_rain = _norm(forecast_during_trip_mm, 25)
@@ -79,33 +77,46 @@ def score_segment(
     current = _norm(current_rain_1h_mm, 20)
     wind = _norm(max(float(forecast_wind_kmh or 0), float(forecast_gust_kmh or 0)), 80)
     visibility = _visibility_risk(forecast_visibility_m)
-
-    weather = (
+    weather_score = min(100.0, 2.0 * (
         pre_rain * .12 + trip_rain * .08 + eta_rain * .10 +
-        pop * .07 + thunder * .04 + current * .03 + wind * .04 + visibility * .02
-    )
+        pop * .07 + thunder * .04 + current * .03 + wind * .04 + visibility * .02))
 
-    # Terrain/infrastructure: vulnerability changes how dangerous otherwise
-    # ordinary weather becomes on steep, seasonal or bridge sections.
+    # ---- 2) TERRAIN sub-score (0-100): how vulnerable this stretch is.
     slope = _norm(avg_slope_deg, 35)
-    seasonal = 100.0 if seasonal_restriction else 0.0
-    bridge = 100.0 if has_bridge else 0.0
-    terrain = slope * .22 + seasonal * .09 + bridge * .04
+    terrain_score = min(100.0, (slope * .22 + (100.0 if seasonal_restriction else 0.0) * .09
+                                + (100.0 if has_bridge else 0.0) * .04) / .35)
 
-    # Verified/current reports can override a dry forecast.
-    incident = min(100.0, active_alerts * 20.0 + active_hazard_reports * 20.0 + verified_hazard_reports * 30.0)
-    score = weather + terrain + incident
+    # ---- 3) FIELD-HAZARD sub-score (0-100): live reports and alerts.
+    hazard_score = min(100.0, active_alerts * 20.0 + active_hazard_reports * 20.0 + verified_hazard_reports * 30.0)
 
+    # ---- Overall: weather leads; terrain only amplifies it (steep road in dry
+    # weather stays low, steep road in a storm goes severe); hazards add on top
+    # and set floors because a real report overrides a dry forecast.
+    overall = weather_score + 0.30 * terrain_score * (0.4 + weather_score / 100.0) + 0.15 * hazard_score
+    floor, driver_floor = 0.0, None
     if status == "blocked":
-        score = max(score, 95.0)
+        floor, driver_floor = 95.0, "road blocked"
     elif verified_hazard_reports > 0:
-        score = max(score, 80.0)
+        floor, driver_floor = 80.0, "verified field hazard"
     elif active_hazard_reports > 0:
-        score = max(score, 65.0)
+        floor, driver_floor = 65.0, "field hazard reports"
     elif active_alerts >= 2:
-        score = max(score, 60.0)
+        floor, driver_floor = 60.0, "active alerts"
+    overall = min(100.0, max(overall, floor))
 
-    return round(min(100.0, score), 1)
+    parts = {"weather": weather_score, "terrain": 0.30 * terrain_score * (0.4 + weather_score / 100.0),
+             "hazards": max(0.15 * hazard_score, floor)}
+    driver = driver_floor if (driver_floor and floor >= weather_score) else max(parts, key=parts.get)
+    return {
+        "overall": round(overall, 1), "weather_score": round(weather_score, 1),
+        "terrain_score": round(terrain_score, 1), "hazard_score": round(max(hazard_score, floor), 1),
+        "driver": {"weather": "weather", "terrain": "terrain", "hazards": "field hazards"}.get(driver, driver),
+    }
+
+
+def score_segment(**kwargs):
+    """Overall 0-100 risk (see score_breakdown for the separate weather/terrain/hazard parts)."""
+    return score_breakdown(**kwargs)["overall"]
 
 
 def classify_risk_level(score):

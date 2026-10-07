@@ -173,6 +173,11 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
                   <span>Gust {num(s.forecast_gust_kmh)} km/h</span>
                   <span>Visibility {visibilityLabel(s.forecast_visibility_m)}</span>
                 </div>
+                {s.weather_score !== undefined && (
+                  <div style={{ color: '#888', marginTop: 4, fontSize: 11 }}>
+                    Weather {s.weather_score} · Terrain {s.terrain_score} · Field hazards {s.hazard_score} — mainly {s.risk_driver}
+                  </div>
+                )}
                 {reasons.map((r, i) => (
                   <div key={i} style={{ color: '#999', marginTop: 2 }}>• {r}</div>
                 ))}

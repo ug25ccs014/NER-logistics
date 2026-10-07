@@ -22,7 +22,7 @@ def _evaluate(rows, depart_at_utc, journey_minutes, cache):
         seg_start = depart_at_utc + timedelta(minutes=offset_min)
         seg_end = seg_start + timedelta(minutes=segment_duration)
         weather = forecast_service.forecast_for_window(row["lat"], row["lon"], seg_start, seg_end, cache)
-        score = risk_model.score_segment(
+        parts = risk_model.score_breakdown(
             **weather,
             avg_slope_deg=row["avg_slope_deg"],
             seasonal_restriction=row["seasonal_restriction"],
@@ -32,12 +32,15 @@ def _evaluate(rows, depart_at_utc, journey_minutes, cache):
             verified_hazard_reports=row["verified_hazard_reports"],
             status=row["status"],
         )
+        score = parts["overall"]
         props = {
             "id": row["id"], "name": row["name"], "corridor": row["corridor"],
             "status": row["status"], "has_bridge": row["has_bridge"],
             "seasonal_restriction": row["seasonal_restriction"],
             "avg_slope_deg": float(row["avg_slope_deg"]) if row["avg_slope_deg"] is not None else None,
             "risk_score": score, "risk_level": risk_model.classify_risk_level(score),
+            "weather_score": parts["weather_score"], "terrain_score": parts["terrain_score"],
+            "hazard_score": parts["hazard_score"], "risk_driver": parts["driver"],
             **weather,
             "active_alerts": row["active_alerts"],
             "active_hazard_reports": row["active_hazard_reports"],
@@ -85,6 +88,7 @@ def build_report(props_list, depart_at_utc, journey_minutes, options):
         return None
     worst = max(props_list, key=lambda p: p["risk_score"])
     score, level = worst["risk_score"], worst["risk_level"]
+    wx_peak = max(props_list, key=lambda p: p["weather_score"])
     heavy = [p for p in props_list if p["forecast_rain_1h_mm"] >= 5]
     rainy = [p for p in props_list if p["forecast_rain_1h_mm"] >= 0.5 or p["rain_probability_pct"] >= 60]
     storms = [p for p in props_list if p["thunderstorm_expected"]]
@@ -108,6 +112,9 @@ def build_report(props_list, depart_at_utc, journey_minutes, options):
     if foggy: drivers.append("low visibility")
     if incidents: drivers.append("reported road hazards")
     why = (" from " + ", ".join(drivers)) if drivers else ""
+    wx_level = risk_model.classify_risk_level(wx_peak["weather_score"])
+    if level in ("high", "severe") and wx_level == "low":
+        why = f" from {worst['risk_driver']} (weather itself looks fine)"
     headline = {
         "low": "Conditions look good for this trip",
         "moderate": f"Moderate risk expected{why}",
@@ -116,7 +123,9 @@ def build_report(props_list, depart_at_utc, journey_minutes, options):
     }.get(level, "Forecast ready")
 
     # ---- facts
-    facts = [f"Worst section: {worst['name']} (risk {score}/100, {level}) around "
+    facts = [f"Weather alone: {wx_peak['weather_score']}/100 "
+             f"({risk_model.classify_risk_level(wx_peak['weather_score'])}); overall route risk {score}/100 is driven by {worst['risk_driver']}."]
+    facts += [f"Worst section: {worst['name']} (risk {score}/100, {level}) around "
              f"{_fmt_ist(datetime.fromisoformat(worst['forecast_arrival']))}."]
     if peak["forecast_rain_1h_mm"] >= 0.5:
         facts.append(f"Heaviest rain: {peak['forecast_rain_1h_mm']} mm/h near {peak['name']}; "
