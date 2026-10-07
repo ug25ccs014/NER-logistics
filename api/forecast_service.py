@@ -130,6 +130,7 @@ def _normalize_open_meteo(data):
                       _cape_thunder_pct(cp, pp))
                   for c, cp, pp in zip(codes, col("cape"), col("precipitation_probability"))],
         "has_past": True,
+        "tprob_field_present": any(v is not None for v in col("cape")),
     }
 
 
@@ -432,6 +433,9 @@ def _features(series, now, start, end):
         "forecast_temperature_c": _at(series, "temp", ai),
         "forecast_soil_moisture": _at(series, "soil", ai),
         "thunder_probability_pct": thunder_prob,
+        # True only if this provider actually supplied thunder information (a
+        # probability/CAPE field, or a thunder code) -- otherwise 0 means "unknown".
+        "thunder_known": bool(series.get("tprob_field_present")) or thunder_prob > 0,
         "thunderstorm_expected": thunder_prob >= 40.0 or any(
             (series["thunder"][i] if i < len(series["thunder"]) else False) for i in near),
         "forecast_weather_code": _at(series, "code", ai),
@@ -518,6 +522,9 @@ def forecast_for_window(lat, lon, window_start_utc, window_end_utc, cache):
         "rain_probability_estimated": pop_estimated,
         # Safety-first: the highest thunder probability any provider reports.
         "thunder_probability_pct": round(max(f["thunder_probability_pct"] for f in used.values()), 1),
+        "thunder_data_available": any(f["thunder_known"] for f in used.values()),
+        "thunder_source": next((PROVIDER_LABELS[p] for p, f in sorted(
+            used.items(), key=lambda kv: -kv[1]["thunder_probability_pct"]) if f["thunder_known"]), None),
         "thunderstorm_expected": any(f["thunderstorm_expected"] for f in used.values()),
         "current_rain_1h_mm": round(float(bundle.get("current_rain") or 0.0), 1),
         "forecast_rain_1h_mm": round(blended["forecast_rain_1h_mm"] or 0.0, 1),

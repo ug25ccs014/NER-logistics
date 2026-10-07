@@ -252,7 +252,8 @@ def compute_point_forecast(depart_at_utc: datetime, points: list, chunk_minutes:
             "index": p.get("index", i), "risk_score": score, "risk_level": risk_model.classify_risk_level(score),
             "weather_score": parts["weather_score"], "terrain_score": parts["terrain_score"],
             "hazard_score": 0.0, "risk_driver": parts["driver"], **weather,
-            "estimated": True, "name": "Unmonitored road (live weather estimate)",
+            "estimated": True, "terrain_known": p.get("slope") is not None,
+            "name": "Unmonitored road (live weather estimate)",
             "forecast_arrival": seg_start.isoformat(), "model_version": risk_model.MODEL_VERSION,
         })
     return {"points": out, "generated_at": datetime.now(timezone.utc).isoformat()}

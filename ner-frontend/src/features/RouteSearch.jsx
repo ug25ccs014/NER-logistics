@@ -14,6 +14,7 @@ import {
   getRiskColor,
   scoreRouteRisk,
   explainRisk,
+  breakdownText,
 } from '../utils/geo.js';
 import ShipmentMatchesForRoute from './ShipmentMatchesForRoute.jsx';
 import WeatherReportCard from './WeatherReportCard.jsx';
@@ -107,7 +108,7 @@ export default function RouteSearch({ onRouteFound }) {
           const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
           line.bindPopup(
             chunk.segment
-              ? `<b>${chunk.segment.name_status === 'unnamed' ? t('unnamed_road') : chunk.segment.name}</b><br/>Road ID: ${chunk.segment.road_code || '—'}<br/>${t('popup_risk_label')} <b style="color:${chunk.color}">${
+              ? `<b>${chunk.segment.estimated ? 'Unmonitored road — live estimate' : chunk.segment.name_status === 'unnamed' ? t('unnamed_road') : chunk.segment.name}</b><br/>${chunk.segment.estimated ? `<span style="font-size:11px;color:#666">${breakdownText(chunk.segment)}</span>` : `Road ID: ${chunk.segment.road_code || '—'}`}<br/>${t('popup_risk_label')} <b style="color:${chunk.color}">${
                   chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
                 }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
               : 'No risk data for this stretch (unmonitored road and live estimate unavailable)'
@@ -389,9 +390,7 @@ function RouteResultCard({ opt, index, selected, onSelect }) {
                 </div>
                 {row.segment.weather_score !== undefined && (
                   <div style={{ color: '#888', marginTop: 2, fontSize: 11 }}>
-                    Weather {row.segment.weather_score} · Terrain {row.segment.terrain_score} · Field hazards {row.segment.hazard_score}
-                    {row.segment.thunder_probability_pct !== undefined ? ` · Thunder ${Math.round(row.segment.thunder_probability_pct)}%` : ''}
-                    {row.segment.risk_driver ? ` — mainly ${row.segment.risk_driver}` : ''}
+                    {breakdownText(row.segment)}
                   </div>
                 )}
                 {reasons.length > 0 && <div style={{ color: '#999', marginTop: 2 }}>{reasons[0]}</div>}

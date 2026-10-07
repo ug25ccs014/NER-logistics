@@ -13,6 +13,7 @@ import {
   getRiskColor,
   scoreRouteRisk,
   explainRisk,
+  breakdownText,
 } from '../utils/geo.js';
 
 // Same idea as RouteSearch's map rendering, but for exactly ONE
@@ -112,7 +113,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
         const line = L.polyline(chunk.coords, { color: chunk.color, weight: 6, opacity: 0.95 }).addTo(map);
         line.bindPopup(
           chunk.segment
-            ? `<b>${chunk.segment.name}</b><br/>${t('forecast_eta')} <b style="color:${chunk.color}">${
+            ? `<b>${chunk.segment.estimated ? 'Unmonitored road — live estimate' : chunk.segment.name}</b>${chunk.segment.estimated ? `<br/><span style="font-size:11px;color:#666">${breakdownText(chunk.segment)}</span>` : ''}<br/>${t('forecast_eta')} <b style="color:${chunk.color}">${
                 chunk.segment.risk_level ? chunk.segment.risk_level.toUpperCase() : 'NOT YET SCORED'
               }</b> (score ${chunk.segment.risk_score})${reasonsHtml(explainRisk(chunk.segment))}`
             : t('popup_no_data')
@@ -181,8 +182,7 @@ export default function TripRiskForecast({ origin, dest, departAt }) {
                 </div>
                 {s.weather_score !== undefined && (
                   <div style={{ color: '#888', marginTop: 4, fontSize: 11 }}>
-                    Weather {s.weather_score} · Terrain {s.terrain_score} · Field hazards {s.hazard_score}
-                    {s.thunder_probability_pct !== undefined ? ` · Thunder ${Math.round(s.thunder_probability_pct)}%` : ''} — mainly {s.risk_driver}
+                    {breakdownText(s)}
                   </div>
                 )}
                 {reasons.map((r, i) => (

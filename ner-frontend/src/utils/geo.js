@@ -187,6 +187,20 @@ export async function fillGapChunks(chunks, { departIso, durationMin, fetchPoint
   }
 }
 
+// One-line score breakdown. Unmonitored (estimated) stretches don't pretend
+// to know field hazards or, without slope data, terrain.
+export function breakdownText(s) {
+  if (s.weather_score === undefined) return '';
+  const thunder = s.thunder_probability_pct === undefined ? ''
+    : s.thunder_data_available === false ? ' · Thunder n/a (no provider data)'
+    : ` · Thunder ${Math.round(s.thunder_probability_pct)}%${s.thunder_source ? ` (${s.thunder_source})` : ''}`;
+  if (s.estimated) {
+    const terrain = s.terrain_known ? `Terrain estimate ${s.terrain_score}` : 'Terrain unknown';
+    return `Weather ${s.weather_score} · ${terrain}${thunder} · Field hazards not monitored`;
+  }
+  return `Weather ${s.weather_score} · Terrain ${s.terrain_score} · Field hazards ${s.hazard_score}${thunder}${s.risk_driver ? ` — mainly ${s.risk_driver}` : ''}`;
+}
+
 // Turns raw contributing factors into human-readable reasons, e.g.
 // "Heavy rainfall in the last 24h (52mm)".
 export function explainRisk(p) {
@@ -196,7 +210,7 @@ export function explainRisk(p) {
   if (p.forecast_to_departure_mm >= 5) reasons.push(`Forecast rain before this section (${p.forecast_to_departure_mm}mm)`);
   if (p.forecast_during_trip_mm >= 2) reasons.push(`Forecast rain during trip (${p.forecast_during_trip_mm}mm)`);
   if (p.rain_probability_pct >= 60) reasons.push(`Rain probability at arrival (${p.rain_probability_pct}%)`);
-  if (p.thunder_probability_pct >= 30) reasons.push(`Thunderstorm probability near arrival (${Math.round(p.thunder_probability_pct)}%)`);
+  if (p.thunder_data_available !== false && p.thunder_probability_pct >= 30) reasons.push(`Thunderstorm probability near arrival (${Math.round(p.thunder_probability_pct)}%)`);
   else if (p.thunderstorm_expected) reasons.push('Thunderstorm signal near arrival');
   if (p.estimated) reasons.push('Estimated from live weather only — this road is not in the monitored network');
   if (p.forecast_gust_kmh >= 50) reasons.push(`Strong wind gusts forecast (${p.forecast_gust_kmh}km/h)`);
