@@ -52,8 +52,9 @@ export async function submitOrQueue(payload) {
     // A thrown Error from a non-2xx response (e.g. bad report_type)
     // means the server was reachable and rejected it -- don't queue
     // something the server has already told us is invalid.
-    if (err instanceof TypeError) {
-      // fetch() throws TypeError for actual network failures.
+    if (err instanceof TypeError || err?.isNetworkError) {
+      // fetch() throws TypeError for actual network failures; api.js flags the
+      // same condition with isNetworkError (weak signal: navigator.onLine can be true).
       queueReport(payload);
       return { queued: true };
     }
@@ -74,8 +75,39 @@ function queueReport(payload) {
   }
 }
 
+// ---- other actions (e.g. road-name submissions): same idea, one generic queue ----
+const ACTIONS_KEY = 'ner_pending_actions';
+const ACTION_HANDLERS = {
+  road_name: (payload) => api.submitRoadName(payload),
+};
+
+function readActions() {
+  try { return JSON.parse(localStorage.getItem(ACTIONS_KEY)) || []; } catch { return []; }
+}
+function writeActions(list) {
+  localStorage.setItem(ACTIONS_KEY, JSON.stringify(list));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('ner-queue-changed', { detail: { pending: pendingCount() } }));
+}
+
+// Try now; if there is no connection, keep it on the device and send it later.
+// A real server rejection (4xx) still throws so the UI can show it.
+export async function submitActionOrQueue(type, payload) {
+  const handler = ACTION_HANDLERS[type];
+  if (!handler) throw new Error(`Unknown offline action: ${type}`);
+  const entry = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`, type, payload, queued_at: new Date().toISOString() };
+  const queueIt = () => { const list = readActions(); list.push(entry); writeActions(list); return { queued: true }; };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return queueIt();
+  try {
+    await handler(payload);
+    return { queued: false };
+  } catch (err) {
+    if (err instanceof TypeError || err?.isNetworkError) return queueIt();
+    throw err;
+  }
+}
+
 export function pendingCount() {
-  return readQueue().length;
+  return readQueue().length + readActions().length;
 }
 
 // Call once at app start and again on the browser's 'online' event.
@@ -83,7 +115,17 @@ export function pendingCount() {
 // offline, or a genuine server error) stays queued for next time.
 export async function flushQueue() {
   const queue = readQueue();
-  if (queue.length === 0) return { sent: 0, remaining: 0 };
+  const actions = readActions();
+  if (queue.length === 0 && actions.length === 0) return { sent: 0, remaining: 0 };
+
+  // Queued actions first (small, quick); anything that still fails stays queued.
+  const actionsLeft = [];
+  let actionsSent = 0;
+  for (const entry of actions) {
+    try { await ACTION_HANDLERS[entry.type](entry.payload); actionsSent += 1; } catch { actionsLeft.push(entry); }
+  }
+  if (actions.length) writeActions(actionsLeft);
+  if (queue.length === 0) return { sent: actionsSent, remaining: actionsLeft.length };
 
   const stillPending = [];
   let sent = 0;
@@ -96,5 +138,5 @@ export async function flushQueue() {
     }
   }
   writeQueue(stillPending);
-  return { sent, remaining: stillPending.length };
+  return { sent: sent + actionsSent, remaining: stillPending.length + actionsLeft.length };
 }

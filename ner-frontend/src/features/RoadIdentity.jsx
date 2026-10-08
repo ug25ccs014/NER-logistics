@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import L from 'leaflet';
 import { api } from '../api.js';
+import { submitActionOrQueue } from '../utils/offlineQueue.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
@@ -73,11 +74,11 @@ export default function RoadIdentity() {
   const submit = async () => {
     if (!selected || !name.trim()) return;
     try {
-      await api.submitRoadName({ segment_id: selected.id, submitted_name: name.trim(), language, note: note.trim() || null, source: 'road_identity' });
-      setStatus(t('name_submitted_status'));
+      const { queued } = await submitActionOrQueue('road_name', { segment_id: selected.id, submitted_name: name.trim(), language, note: note.trim() || null, source: 'road_identity' });
+      setStatus(queued ? t('off_pending').replace('{n}', 1) : t('name_submitted_status'));
       setSelected(null);
       setName('');
-      await load();
+      if (!queued) await load();
     } catch (err) { setStatus(err.message); }
   };
 

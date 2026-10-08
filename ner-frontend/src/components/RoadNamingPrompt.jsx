@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api.js';
+import { submitActionOrQueue } from '../utils/offlineQueue.js';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
@@ -21,13 +21,14 @@ export default function RoadNamingPrompt() {
     if (!name.trim() || !roadOpportunity) return;
     setBusy(true);
     try {
-      await api.submitRoadName({
+      const { queued } = await submitActionOrQueue('road_name', {
         segment_id: roadOpportunity.id,
         submitted_name: name.trim(),
         language,
         note: note.trim() || null,
         source: 'driver_pass',
       });
+      if (queued) alert(t('off_pending').replace('{n}', 1));
       setDone(true);
       clearRoadOpportunity();
       setTimeout(() => setDone(false), 3500);

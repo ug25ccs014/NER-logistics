@@ -23,7 +23,9 @@ async function request(path, options = {}) {
       ...options,
     });
   } catch (err) {
-    throw new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
+    const netErr = new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
+    netErr.isNetworkError = true;   // lets offlineQueue tell "no connection" from "server said no"
+    throw netErr;
   }
   if (res.status === 401 && token) {
     // The token itself was rejected (expired, or signed with an old
@@ -176,6 +178,8 @@ export const api = {
 
   // Route segments (for the map)
   segments: () => request('/segments'),
+  // Junction pairs, saved for offline route planning.
+  segmentConnections: () => request('/segments/connections'),
 
   // Road Identity: unnamed-road discovery + community naming.
   // lastPosition here is the app-wide tracked position (or a one-off

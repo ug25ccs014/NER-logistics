@@ -6,6 +6,7 @@ import { useMap } from '../context/MapContext.jsx';
 import { useChat } from '../context/ChatContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
+import OfflineSosCard from './OfflineSosCard.jsx';
 import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
 
 // This replaces the old "Nearby Help (Live Location)" panel that had
@@ -211,6 +212,7 @@ export default function LiveLocationSos() {
   return (
     <div>
       <div className="section-title">{t('sos_title')}</div>
+      <OfflineSosCard name={name} phone={phone} />
       <input
         className="text-input"
         placeholder={t('your_name_required_ph')}

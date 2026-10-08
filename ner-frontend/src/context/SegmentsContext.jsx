@@ -14,6 +14,7 @@ export function SegmentsProvider({ children }) {
   const [stale, setStale] = useState(false);       // true = showing saved (not live) data
   const [savedAt, setSavedAt] = useState(null);
   const segmentsRef = useRef(null);
+  const [connections, setConnections] = useState(null);   // junction pairs, for offline routing
 
   const refresh = () => api
       .segments()
@@ -45,14 +46,27 @@ export function SegmentsProvider({ children }) {
         return null;
       });
 
+  // Junctions rarely change, so fetch once (again after reconnecting if it failed)
+  // and keep a saved copy for offline route planning.
+  const loadConnections = () => api
+    .segmentConnections()
+    .then((res) => { setConnections(res.connections || []); saveSnapshot('connections', res.connections || []); })
+    .catch(async () => {
+      const snap = await loadSnapshot('connections');
+      if (snap?.data) setConnections(snap.data);
+    });
+
   // Re-pull every 5 min so map/route scores track the server's live re-scoring.
   useEffect(() => {
     refresh();
+    loadConnections();
     const id = setInterval(refresh, 5 * 60 * 1000);
-    return () => clearInterval(id);
+    const onOnline = () => { refresh(); loadConnections(); };
+    window.addEventListener('online', onOnline);
+    return () => { clearInterval(id); window.removeEventListener('online', onOnline); };
   }, []);
 
-  return <SegmentsContext.Provider value={{ segments, error, refresh, stale, savedAt }}>{children}</SegmentsContext.Provider>;
+  return <SegmentsContext.Provider value={{ segments, error, refresh, stale, savedAt, connections }}>{children}</SegmentsContext.Provider>;
 }
 
 export function useSegments() {

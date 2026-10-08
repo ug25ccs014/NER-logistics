@@ -4,6 +4,7 @@ import L from 'leaflet';
 import PlaceAutocomplete from '../components/PlaceAutocomplete.jsx';
 import { api, fetchRealRoutes, geocodePlace } from '../api.js';
 import { saveSnapshot, loadSnapshot } from '../utils/offlineCache.js';
+import OfflineRoutePanel from './OfflineRoutePanel.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
@@ -33,7 +34,7 @@ const AUTO_REFRESH_MS = 10 * 60 * 1000;
 export default function RouteSearch({ onRouteFound }) {
   const { t } = useLanguage();
   const { map } = useMap();
-  const { segments, refresh: refreshSegments } = useSegments();
+  const { segments, refresh: refreshSegments, savedAt: segmentsSavedAt } = useSegments();
   const scoresUpdated = segments?.scores_updated_at;
   const { setRouteCoords } = useActiveRoute();
 
@@ -50,12 +51,15 @@ export default function RouteSearch({ onRouteFound }) {
   const [refreshing, setRefreshing] = useState(false);
   const baseOptionsRef = useRef([]);
   const [savedRoute, setSavedRoute] = useState(null);   // { savedAt, data } from the last online search
-  const [savedCopyAt, setSavedCopyAt] = useState(null); // set while showing a restored (not live) copy
+  const [savedCopyAt, setSavedCopyAt] = useState(null); // set while showing a restored / offline (not live) copy
+  const [offlineGenerated, setOfflineGenerated] = useState(false); // true = route was planned on-device, not by OSRM
+  const [savedTrips, setSavedTrips] = useState([]);       // explicit "Save trip" list (max 8)
 
   // Remember the last route (with its risk + weather report) so it can be
   // reopened with no signal. Skipped while showing a restored copy.
   useEffect(() => {
     loadSnapshot('last-route').then((s) => s && setSavedRoute(s));
+    loadSnapshot('saved-trips').then((s) => Array.isArray(s?.data) && setSavedTrips(s.data));
   }, []);
   useEffect(() => {
     if (!routeOptions.length || savedCopyAt) return;
@@ -64,8 +68,8 @@ export default function RouteSearch({ onRouteFound }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeOptions]);
 
-  const restoreSavedRoute = () => {
-    const s = savedRoute?.data;
+  const restoreSavedRoute = (entry = savedRoute) => {
+    const s = entry?.data;
     if (!s?.routeOptions?.length) return;
     setFromText(s.fromText || ''); setToText(s.toText || '');
     setFromPlace(s.fromPlace || null); setToPlace(s.toPlace || null);
@@ -74,7 +78,8 @@ export default function RouteSearch({ onRouteFound }) {
     if (s.fromPlace && s.toPlace) setLastSearch({ origin: s.fromPlace, dest: s.toPlace });
     setRouteOptions(s.routeOptions);
     setSelectedIndex(0);
-    setSavedCopyAt(savedRoute.savedAt);
+    setSavedCopyAt(entry.savedAt);
+    setOfflineGenerated(false);
     setStatus(null);
     setForecastStatus(null);
     renderRoute(s.routeOptions, 0);
@@ -89,6 +94,36 @@ export default function RouteSearch({ onRouteFound }) {
     routeLayersRef.current = [];
     riskMarkersRef.current.forEach((m) => map && map.removeLayer(m));
     riskMarkersRef.current = [];
+  };
+
+  // Route planned on the device from the saved road network (no signal needed).
+  const showOfflineRoutes = (options) => {
+    baseOptionsRef.current = options;
+    setRouteOptions(options);
+    setSelectedIndex(0);
+    setSavedCopyAt(segmentsSavedAt || new Date().toISOString());
+    setOfflineGenerated(true);
+    setStatus(null);
+    setForecastStatus(null);
+    renderRoute(options, 0);
+    try { map.fitBounds(L.latLngBounds(options[0].route.coords), { padding: [30, 30] }); } catch { /* ignore */ }
+  };
+
+  const saveTrip = async () => {
+    if (!routeOptions.length) return;
+    const stamp = new Date().toISOString();
+    const name = fromText && toText ? `${fromText} → ${toText}` : `Trip ${new Date(stamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+    const entry = { id: stamp, name, savedAt: stamp, data: { fromText, toText, fromPlace, toPlace, departAtInput, routeOptions } };
+    const next = [entry, ...savedTrips.filter((x) => x.name !== name)].slice(0, 8);
+    setSavedTrips(next);
+    await saveSnapshot('saved-trips', next);
+    setForecastStatus(`${t('off_trip_save').replace('★ ', '')}: ${name}`);
+  };
+
+  const deleteTrip = async (id) => {
+    const next = savedTrips.filter((x) => x.id !== id);
+    setSavedTrips(next);
+    await saveSnapshot('saved-trips', next);
   };
 
   const resolvePlace = async (text, picked) => {
@@ -192,6 +227,7 @@ export default function RouteSearch({ onRouteFound }) {
       setLastSearch({ origin, dest });
       const forecastedOptions = await applyForecast(baseOptions, departAtInput);
       setSavedCopyAt(null);
+      setOfflineGenerated(false);
       setRouteOptions(forecastedOptions);
       setSelectedIndex(0);
       renderRoute(forecastedOptions, 0);
@@ -263,7 +299,7 @@ export default function RouteSearch({ onRouteFound }) {
     setRefreshing(true);
     try {
       const updated = await applyForecast(baseOptionsRef.current, input);
-      if (updated.some((o) => o.forecasted)) setSavedCopyAt(null);   // live data again
+      if (updated.some((o) => o.forecasted)) { setSavedCopyAt(null); setOfflineGenerated(false); }   // live data again
       setRouteOptions(updated);
       const idx = Math.min(selectedIndex, updated.length - 1);
       renderRoute(updated, idx);
@@ -327,19 +363,36 @@ export default function RouteSearch({ onRouteFound }) {
       </div>
       <button className="btn btn-primary" onClick={search}>{t('find_route_btn')}</button>
       {routeOptions.length > 0 && (
-        <button type="button" className="btn" style={{ marginLeft: 6 }} disabled={refreshing} onClick={() => refreshForecast()}>
-          {refreshing ? 'Updating…' : '↻ Refresh weather'}
-        </button>
+        <>
+          <button type="button" className="btn" style={{ marginLeft: 6 }} disabled={refreshing} onClick={() => refreshForecast()}>
+            {refreshing ? 'Updating…' : '↻ Refresh weather'}
+          </button>
+          <button type="button" className="btn" style={{ marginLeft: 6 }} onClick={saveTrip}>{t('off_trip_save')}</button>
+        </>
       )}
+      <OfflineRoutePanel onRoutes={showOfflineRoutes} />
       {status && <div className="status-line">{status}</div>}
       {routeOptions.length === 0 && savedRoute?.data?.routeOptions?.length > 0 && (
-        <button type="button" className="btn" style={{ marginTop: 8, display: 'block' }} onClick={restoreSavedRoute}>
+        <button type="button" className="btn" style={{ marginTop: 8, display: 'block' }} onClick={() => restoreSavedRoute()}>
           💾 {t('off_saved_route_btn').replace('{time}', new Date(savedRoute.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
         </button>
       )}
+      {routeOptions.length === 0 && savedTrips.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{t('off_trip_saved_title')}</div>
+          {savedTrips.map((trip) => (
+            <div key={trip.id} style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <button type="button" className="btn" style={{ flex: 1, textAlign: 'left' }} onClick={() => restoreSavedRoute(trip)}>
+                ★ {trip.name}
+              </button>
+              <button type="button" className="btn" aria-label="Delete saved trip" onClick={() => deleteTrip(trip.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
       {savedCopyAt && (
         <div className="status-line" style={{ marginTop: 5, fontWeight: 600 }}>
-          {t('off_saved_copy_note').replace('{time}', new Date(savedCopyAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
+          {t(offlineGenerated ? 'off_offline_route_note' : 'off_saved_copy_note').replace('{time}', new Date(savedCopyAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
         </div>
       )}
       {scoresUpdated && (

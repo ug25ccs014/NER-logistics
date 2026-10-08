@@ -659,6 +659,17 @@ def get_segments():
     return data
 
 
+@app.get("/segments/connections")
+def get_segment_connections():
+    """Junction pairs between road segments ([[a, b], ...]).
+
+    The app saves this next to /segments so it can plan routes with no signal
+    (ner-frontend/src/utils/offlineRouter.js).
+    """
+    rows = db.fetch_connections()
+    return {"connections": [[r["segment_a_id"], r["segment_b_id"]] for r in rows]}
+
+
 @app.get("/segments/forecast")
 def get_segments_forecast(
     depart_at: datetime = Query(..., description="Planned departure time, IST (e.g. 2026-09-14T20:00:00)"),
