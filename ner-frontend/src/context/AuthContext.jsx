@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react';
+import { clearSnapshots } from '../utils/offlineCache.js';
 
 // ============================================================
 // Single source of truth for "who is logged in and as what".
@@ -140,6 +141,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    clearSnapshots(); // don't leave saved routes/places on a shared phone
     localStorage.removeItem('ner_token');
     sessionStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');

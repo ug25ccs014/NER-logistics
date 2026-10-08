@@ -1,0 +1,15 @@
+{
+  "name": "NER Logistics Intelligence",
+  "short_name": "NER Logistics",
+  "description": "Road risk, live weather and field reports for North East India - works offline on weak networks.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#18324A",
+  "theme_color": "#18324A",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

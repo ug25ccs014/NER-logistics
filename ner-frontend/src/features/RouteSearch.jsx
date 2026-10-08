@@ -3,6 +3,7 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 import L from 'leaflet';
 import PlaceAutocomplete from '../components/PlaceAutocomplete.jsx';
 import { api, fetchRealRoutes, geocodePlace } from '../api.js';
+import { saveSnapshot, loadSnapshot } from '../utils/offlineCache.js';
 import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
@@ -48,6 +49,37 @@ export default function RouteSearch({ onRouteFound }) {
   const [lastSearch, setLastSearch] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const baseOptionsRef = useRef([]);
+  const [savedRoute, setSavedRoute] = useState(null);   // { savedAt, data } from the last online search
+  const [savedCopyAt, setSavedCopyAt] = useState(null); // set while showing a restored (not live) copy
+
+  // Remember the last route (with its risk + weather report) so it can be
+  // reopened with no signal. Skipped while showing a restored copy.
+  useEffect(() => {
+    loadSnapshot('last-route').then((s) => s && setSavedRoute(s));
+  }, []);
+  useEffect(() => {
+    if (!routeOptions.length || savedCopyAt) return;
+    saveSnapshot('last-route', { fromText, toText, fromPlace, toPlace, departAtInput, routeOptions })
+      .then((at) => at && setSavedRoute({ savedAt: at, data: { fromText, toText, fromPlace, toPlace, departAtInput, routeOptions } }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeOptions]);
+
+  const restoreSavedRoute = () => {
+    const s = savedRoute?.data;
+    if (!s?.routeOptions?.length) return;
+    setFromText(s.fromText || ''); setToText(s.toText || '');
+    setFromPlace(s.fromPlace || null); setToPlace(s.toPlace || null);
+    setDepartAtInput(s.departAtInput || '');
+    baseOptionsRef.current = s.routeOptions.map((o) => ({ ...o, forecasted: false, forecastMeta: null }));
+    if (s.fromPlace && s.toPlace) setLastSearch({ origin: s.fromPlace, dest: s.toPlace });
+    setRouteOptions(s.routeOptions);
+    setSelectedIndex(0);
+    setSavedCopyAt(savedRoute.savedAt);
+    setStatus(null);
+    setForecastStatus(null);
+    renderRoute(s.routeOptions, 0);
+    try { map.fitBounds(L.latLngBounds(s.routeOptions[0].route.coords), { padding: [30, 30] }); } catch { /* ignore */ }
+  };
 
   const routeLayersRef = useRef([]);
   const riskMarkersRef = useRef([]);
@@ -144,7 +176,7 @@ export default function RouteSearch({ onRouteFound }) {
     try {
       [origin, dest] = await Promise.all([resolvePlace(fromText, fromPlace), resolvePlace(toText, toPlace)]);
     } catch (err) {
-      setStatus(err.message);
+      setStatus(navigator.onLine === false ? t('off_route_needs_net') : err.message);
       return;
     }
     try {
@@ -159,13 +191,14 @@ export default function RouteSearch({ onRouteFound }) {
       baseOptionsRef.current = baseOptions;
       setLastSearch({ origin, dest });
       const forecastedOptions = await applyForecast(baseOptions, departAtInput);
+      setSavedCopyAt(null);
       setRouteOptions(forecastedOptions);
       setSelectedIndex(0);
       renderRoute(forecastedOptions, 0);
       setStatus(null);
       onRouteFound?.({ origin, dest });
     } catch (err) {
-      setStatus(err.message);
+      setStatus(navigator.onLine === false ? t('off_route_needs_net') : err.message);
     }
   };
 
@@ -226,9 +259,11 @@ export default function RouteSearch({ onRouteFound }) {
   // Re-run only the forecast for the current routes (new departure time or periodic refresh).
   const refreshForecast = async (input = departAtInput) => {
     if (!baseOptionsRef.current.length || refreshing) return;
+    if (navigator.onLine === false) { setForecastStatus(t('off_route_needs_net')); return; }
     setRefreshing(true);
     try {
       const updated = await applyForecast(baseOptionsRef.current, input);
+      if (updated.some((o) => o.forecasted)) setSavedCopyAt(null);   // live data again
       setRouteOptions(updated);
       const idx = Math.min(selectedIndex, updated.length - 1);
       renderRoute(updated, idx);
@@ -239,11 +274,11 @@ export default function RouteSearch({ onRouteFound }) {
 
   // Auto-refresh while a route is open and the trip departs "now".
   useEffect(() => {
-    if (!routeOptions.length || departAtInput) return undefined;
+    if (!routeOptions.length || departAtInput || savedCopyAt) return undefined;
     const id = setInterval(() => refreshForecast(''), AUTO_REFRESH_MS);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeOptions.length, departAtInput, selectedIndex]);
+  }, [routeOptions.length, departAtInput, selectedIndex, savedCopyAt]);
 
   const pickDeparture = (isoUtc) => {
     // Convert the suggested UTC instant to the input's local 'YYYY-MM-DDTHH:mm'.
@@ -297,6 +332,16 @@ export default function RouteSearch({ onRouteFound }) {
         </button>
       )}
       {status && <div className="status-line">{status}</div>}
+      {routeOptions.length === 0 && savedRoute?.data?.routeOptions?.length > 0 && (
+        <button type="button" className="btn" style={{ marginTop: 8, display: 'block' }} onClick={restoreSavedRoute}>
+          💾 {t('off_saved_route_btn').replace('{time}', new Date(savedRoute.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
+        </button>
+      )}
+      {savedCopyAt && (
+        <div className="status-line" style={{ marginTop: 5, fontWeight: 600 }}>
+          {t('off_saved_copy_note').replace('{time}', new Date(savedCopyAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
+        </div>
+      )}
       {scoresUpdated && (
         <div className="status-line" style={{ marginTop: 5, fontSize: 11 }}>
           Saved road scores updated {new Date(scoresUpdated).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}{segments?.scores_stale ? ' (refreshing from live weather…)' : ''}

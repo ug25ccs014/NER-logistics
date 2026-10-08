@@ -20,6 +20,8 @@ function readQueue() {
 
 function writeQueue(queue) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  // Lets the status banner show "N reports waiting" without polling.
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('ner-queue-changed', { detail: { pending: queue.length } }));
 }
 
 // Builds a payload with a client-generated id + captured_at, so it's
@@ -62,7 +64,14 @@ export async function submitOrQueue(payload) {
 function queueReport(payload) {
   const queue = readQueue();
   queue.push(payload);
-  writeQueue(queue);
+  try {
+    writeQueue(queue);
+  } catch {
+    // localStorage is full (photos are stored as base64). A report without its
+    // photo is far better than a report lost -- drop the photo and retry.
+    queue[queue.length - 1] = { ...payload, photo_base64: undefined, photo_dropped_offline: true };
+    writeQueue(queue);
+  }
 }
 
 export function pendingCount() {
