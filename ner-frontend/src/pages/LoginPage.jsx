@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../api.js';
+import { saveOfflineCred, verifyOfflineCred } from '../utils/offlineAuth.js';
 import { useAuth, APP_ROLE_TO_ACCOUNT_ROLE, ROLE_LABELS } from '../context/AuthContext.jsx';
 import { useLanguage, LANGUAGES } from '../context/LanguageContext.jsx';
 import '../styles/landing.css';
@@ -18,7 +19,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('driver');
   const [passkey, setPasskey] = useState('');
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(true); // offline-first app: stay signed in by default
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,15 +27,30 @@ export default function LoginPage() {
 
   const submit = async (e) => {
     e.preventDefault(); setError(null); setBusy(true);
+    const p = phone.trim();
     try {
       const result = mode === 'login'
-        ? await api.login(phone.trim(), password)
-        : await api.register({ fullName: fullName.trim(), phone: phone.trim(), password,
+        ? await api.login(p, password)
+        : await api.register({ fullName: fullName.trim(), phone: p, password,
             role: APP_ROLE_TO_ACCOUNT_ROLE[role], passkey: needsPasskey ? passkey.trim() : undefined });
-      login({ ...result, phone: phone.trim() }, mode === 'login' ? remember : true);
+      // Remember this device so the same account can sign in later with no signal.
+      if (mode === 'login') saveOfflineCred(p, password, result);
+      login({ ...result, phone: p }, mode === 'login' ? remember : true);
       navigate('/app', { replace: true });
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    } catch (err) {
+      // No connection: fall back to the credentials saved by a previous online login.
+      if (mode === 'login' && err.isNetworkError) {
+        const session = await verifyOfflineCred(p, password);
+        if (session) {
+          login({ ...session, phone: p }, remember);
+          navigate('/app', { replace: true });
+          return;
+        }
+        setError('You appear to be offline. Offline sign-in only works on a device where you have already signed in online with this account.');
+        return;
+      }
+      setError(err.message);
+    } finally { setBusy(false); }
   };
 
   const roleLabelKey = { driver: 'role_driver', field_reporter: 'role_field_official', authority: 'role_authority' };
