@@ -40,13 +40,19 @@ export default function LoginPage() {
     } catch (err) {
       // No connection: fall back to the credentials saved by a previous online login.
       if (mode === 'login' && err.isNetworkError) {
-        const session = await verifyOfflineCred(p, password);
-        if (session) {
-          login({ ...session, phone: p }, remember);
+        const r = await verifyOfflineCred(p, password);
+        if (r.ok) {
+          login({ ...r.session, phone: p }, remember);
           navigate('/app', { replace: true });
           return;
         }
-        setError('You appear to be offline. Offline sign-in only works on a device where you have already signed in online with this account.');
+        const msg = {
+          none: 'You are offline, and this device has no saved sign-in yet. Sign in once while online (and do not log out) to enable offline sign-in.',
+          other_account: 'You are offline. This device saved a different account\'s sign-in. Use that phone number, or sign in online with this one.',
+          wrong_password: 'You are offline, and the password does not match the one saved on this device.',
+          unsupported: 'Offline sign-in needs a secure page. Open the app over https:// (or http://localhost), not a plain http:// address.',
+        }[r.reason];
+        setError(msg);
         return;
       }
       setError(err.message);
