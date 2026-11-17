@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react';
 import { clearSnapshots } from '../utils/offlineCache.js';
-import { clearOfflineCred } from '../utils/offlineAuth.js';
 
 // ============================================================
 // Single source of truth for "who is logged in and as what".
@@ -143,7 +142,8 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     clearSnapshots(); // don't leave saved routes/places on a shared phone
-    clearOfflineCred(); // ...or the saved offline-login credentials
+    // NOTE: the saved offline sign-in is deliberately KEPT on logout (it expires on its own
+    // after 7 days, see utils/offlineAuth.js) so the person can sign back in with no signal.
     localStorage.removeItem('ner_token');
     sessionStorage.removeItem('ner_token');
     localStorage.removeItem('ner_role');

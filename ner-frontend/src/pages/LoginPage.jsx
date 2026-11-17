@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../api.js';
-import { saveOfflineCred, verifyOfflineCred } from '../utils/offlineAuth.js';
+import { saveOfflineCred, verifyOfflineCred, hasOfflineCred, OFFLINE_LOGIN_DAYS } from '../utils/offlineAuth.js';
 import { useAuth, APP_ROLE_TO_ACCOUNT_ROLE, ROLE_LABELS } from '../context/AuthContext.jsx';
 import { useLanguage, LANGUAGES } from '../context/LanguageContext.jsx';
 import '../styles/landing.css';
@@ -25,34 +25,63 @@ export default function LoginPage() {
 
   const needsPasskey = mode === 'register' && PRIVILEGED_APP_ROLES.has(role);
 
+  // Try the saved on-device sign-in. Returns true if the person was let in.
+  const tryOfflineLogin = async (p) => {
+    const r = await verifyOfflineCred(p, password);
+    if (r.ok) {
+      login({ ...r.session, phone: p }, remember);
+      navigate('/app', { replace: true });
+      return true;
+    }
+    setError({
+      none: 'You are offline, and this device has no saved sign-in yet. Sign in once while online to enable offline sign-in.',
+      other_account: 'You are offline. This phone number has not signed in on this device before. Use a number that has, or sign in online.',
+      expired: `Your offline sign-in on this device expired (it lasts ${OFFLINE_LOGIN_DAYS} days). Connect to the internet and sign in once to renew it.`,
+      wrong_password: 'You are offline, and the password does not match the one saved on this device.',
+      unsupported: 'Offline sign-in needs a secure page. Open the app over https:// (or http://localhost), not a plain http:// address.',
+    }[r.reason]);
+    return false;
+  };
+
+  // "Server unreachable" = no connection, a hung request, or the host/gateway answering 502-504
+  // (e.g. Render waking up). A real 401 "wrong password" is NOT one of these.
+  const isUnreachable = (err) => err?.isNetworkError || [502, 503, 504].includes(err?.status);
+
   const submit = async (e) => {
     e.preventDefault(); setError(null); setBusy(true);
     const p = phone.trim();
     try {
-      const result = mode === 'login'
-        ? await api.login(p, password)
-        : await api.register({ fullName: fullName.trim(), phone: p, password,
+      // Browser already knows it has no connection -> don't wait for a request to fail.
+      if (mode === 'login' && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        await tryOfflineLogin(p);
+        return;
+      }
+
+      let attempt = mode === 'login'
+        ? api.login(p, password)
+        : api.register({ fullName: fullName.trim(), phone: p, password,
             role: APP_ROLE_TO_ACCOUNT_ROLE[role], passkey: needsPasskey ? passkey.trim() : undefined });
-      // Remember this device so the same account can sign in later with no signal.
-      if (mode === 'login') saveOfflineCred(p, password, result);
+
+      // Weak signal: a request can hang for a long time. If this device has a saved sign-in,
+      // stop waiting after 15 s and use it instead of leaving the person on "please wait".
+      if (mode === 'login' && hasOfflineCred()) {
+        attempt = Promise.race([
+          attempt,
+          new Promise((_, reject) => setTimeout(() => {
+            const te = new Error('Request timed out'); te.isNetworkError = true; reject(te);
+          }, 15000)),
+        ]);
+      }
+
+      const result = await attempt;
+      // Remember this device so the same account can sign in later with no signal (valid 7 days).
+      if (mode === 'login') await saveOfflineCred(p, password, result);
       login({ ...result, phone: p }, mode === 'login' ? remember : true);
       navigate('/app', { replace: true });
     } catch (err) {
-      // No connection: fall back to the credentials saved by a previous online login.
-      if (mode === 'login' && err.isNetworkError) {
-        const r = await verifyOfflineCred(p, password);
-        if (r.ok) {
-          login({ ...r.session, phone: p }, remember);
-          navigate('/app', { replace: true });
-          return;
-        }
-        const msg = {
-          none: 'You are offline, and this device has no saved sign-in yet. Sign in once while online (and do not log out) to enable offline sign-in.',
-          other_account: 'You are offline. This device saved a different account\'s sign-in. Use that phone number, or sign in online with this one.',
-          wrong_password: 'You are offline, and the password does not match the one saved on this device.',
-          unsupported: 'Offline sign-in needs a secure page. Open the app over https:// (or http://localhost), not a plain http:// address.',
-        }[r.reason];
-        setError(msg);
+      // No connection / server unreachable: fall back to the sign-in saved by a previous online login.
+      if (mode === 'login' && isUnreachable(err)) {
+        await tryOfflineLogin(p);
         return;
       }
       setError(err.message);

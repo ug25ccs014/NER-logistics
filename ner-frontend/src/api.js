@@ -41,7 +41,9 @@ async function request(path, options = {}) {
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { /* not JSON */ }
-    throw new Error(detail || `API ${path} returned ${res.status}`);
+    const httpErr = new Error(detail || `API ${path} returned ${res.status}`);
+    httpErr.status = res.status;   // lets callers tell a sleeping/unreachable server (502-504) from a real 'no'
+    throw httpErr;
   }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
