@@ -4,6 +4,7 @@ import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { buildRoadGraph, planOfflineRoutes } from '../utils/offlineRouter.js';
+import { getBestFix, gpsErrorMessage } from '../utils/gps.js';
 
 // "No signal? Plan an offline route": start/destination come from the device GPS
 // or a tap on the map (offline place-name search isn't possible), then the route
@@ -57,13 +58,15 @@ export default function OfflineRoutePanel({ onRoutes }) {
     map.once('click', clickRef.current);
   };
 
-  const useMyLocation = () => {
+  const useMyLocation = async () => {
     setMsg(null);
-    navigator.geolocation.getCurrentPosition(      // GPS works with no data signal
-      (pos) => { const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude }; setPoint('start', pt); map?.setView([pt.lat, pt.lon], 11); },
-      () => setMsg('Could not get your location. Pick the start on the map instead.'),
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      const pos = await getBestFix();   // GPS works with no data signal (on a phone)
+      const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      setPoint('start', pt); map?.setView([pt.lat, pt.lon], 11);
+    } catch (err) {
+      setMsg(`${gpsErrorMessage(err)} Or pick the start on the map instead.`);
+    }
   };
 
   const plan = () => {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { haversineKm } from '../utils/geo.js';
+import { getBestFix, gpsErrorMessage } from '../utils/gps.js';
 
 // Emergency help that does NOT need a data connection:
 //  - GPS works with no signal at all
@@ -47,16 +48,15 @@ export default function OfflineSosCard({ name, phone }) {
     ].filter(Boolean).join(' ');
   };
 
-  const getGps = () => {
+  const getGps = async () => {
     setGpsMsg('…');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const f = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
-        setFix(f); setMessage(build(f)); setGpsMsg(null);
-      },
-      () => setGpsMsg('Could not get GPS. Move to open sky and allow location access, then try again.'),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-    );
+    try {
+      const pos = await getBestFix();
+      const f = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+      setFix(f); setMessage(build(f)); setGpsMsg(null);
+    } catch (err) {
+      setGpsMsg(gpsErrorMessage(err));
+    }
   };
 
   const saveContact = (v) => { setContact(v); try { localStorage.setItem(CONTACT_KEY, v); } catch { /* ignore */ } };
