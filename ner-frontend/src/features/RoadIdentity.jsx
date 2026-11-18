@@ -8,6 +8,36 @@ import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
+import { haversineKm } from '../utils/geo.js';
+import { getBestFix, getLastKnownFix, fixAge } from '../utils/gps.js';
+
+const UNNAMED_STATUSES = new Set(['unnamed', 'suggested', 'community_supported']);
+
+// Offline version of the server's "unnamed roads near you" query, computed from the road network
+// already saved on this device (SegmentsContext keeps it for offline use). Traveller / submission
+// counts only exist on the server, so they come back as null here.
+function nearbyUnnamedFromSaved(segments, lat, lon, radiusKm = 25, limit = 30) {
+  const out = [];
+  (segments?.features || []).forEach((f) => {
+    const p = f.properties || {};
+    if (!UNNAMED_STATUSES.has(p.name_status) || !f.geometry) return;
+    const lines = f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [f.geometry.coordinates];
+    let best = Infinity;
+    lines.forEach((line) => (line || []).forEach((c) => {
+      if (!Array.isArray(c) || typeof c[0] !== 'number') return;
+      const d = haversineKm([lat, lon], [c[1], c[0]]);
+      if (d < best) best = d;
+    }));
+    if (best <= radiusKm) {
+      out.push({
+        id: p.id, road_code: p.road_code, name: p.name, name_status: p.name_status,
+        suggested_name: p.suggested_name, distance_km: Math.round(best * 10) / 10,
+        unique_passers: null, submission_count: null,
+      });
+    }
+  });
+  return out.sort((a, b) => a.distance_km - b.distance_km).slice(0, limit);
+}
 
 function IdentityLayer() {
   const { map } = useMap();
@@ -36,7 +66,7 @@ export default function RoadIdentity() {
   const { role } = useAuth();
   const { map } = useMap();
   const { lastPosition } = useLocationTracking();
-  const { refresh: refreshSegments } = useSegments();
+  const { segments, refresh: refreshSegments } = useSegments();
   const [roads, setRoads] = useState([]);
   const [queue, setQueue] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -45,20 +75,52 @@ export default function RoadIdentity() {
   const [note, setNote] = useState('');
   const [status, setStatus] = useState(null);
 
+  // The app-wide tracker may not have a fix yet (just opened, or no signal): fall back to the
+  // last position saved on this device, then to a one-off GPS fix (works offline on a phone).
+  const [fallbackPos, setFallbackPos] = useState(() => getLastKnownFix());
   useEffect(() => {
-    if (!lastPosition) return;
-    placeCurrentLocationMarker(map, lastPosition.lat, lastPosition.lon);
-  }, [map, lastPosition?.lat, lastPosition?.lon]);
+    if (lastPosition) return;
+    getBestFix().then((pos) => setFallbackPos({ lat: pos.coords.latitude, lon: pos.coords.longitude, at: pos.fixedAt || Date.now() })).catch(() => {});
+  }, [lastPosition?.lat]);
+  const here = lastPosition || fallbackPos;
 
-  const load = async () => {
-    if (!lastPosition) return;
-    try {
-      const data = await api.nearbyRoadIdentity(lastPosition.lat, lastPosition.lon, 25, 30);
-      setRoads(data);
-    } catch (err) { setStatus(err.message); }
+  useEffect(() => {
+    if (!here) return;
+    placeCurrentLocationMarker(map, here.lat, here.lon);
+  }, [map, here?.lat, here?.lon]);
+
+  const loadFromSaved = (note) => {
+    if (!segments) {
+      setRoads([]);
+      setStatus('No saved road data on this device yet. Open the app once while online so roads can be saved for offline use.');
+      return;
+    }
+    setRoads(nearbyUnnamedFromSaved(segments, here.lat, here.lon, 25, 30));
+    setStatus(note);
   };
 
-  useEffect(() => { load(); }, [lastPosition?.lat, lastPosition?.lon]);
+  const load = async () => {
+    if (!here) return;
+    const offlineNote = 'Offline: showing unnamed roads from the road data saved on this device (traveller and submission counts need a connection). Names you submit are sent when you are back online.';
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { loadFromSaved(offlineNote); return; }
+    try {
+      const data = await api.nearbyRoadIdentity(here.lat, here.lon, 25, 30);
+      setRoads(data);
+      setStatus(null);
+    } catch (err) {
+      if (err?.isNetworkError || [502, 503, 504].includes(err?.status)) loadFromSaved(`Could not reach the server. ${offlineNote}`);
+      else setStatus(err.message);
+    }
+  };
+
+  // Re-run when the position changes, when saved roads arrive, and when the connection comes back.
+  useEffect(() => { load(); }, [here?.lat, here?.lon, Boolean(segments)]);
+  useEffect(() => {
+    const onNet = () => load();
+    window.addEventListener('online', onNet);
+    window.addEventListener('offline', onNet);
+    return () => { window.removeEventListener('online', onNet); window.removeEventListener('offline', onNet); };
+  }, [here?.lat, here?.lon, segments]);
 
   useEffect(() => {
     if (role !== 'authority') return;
@@ -99,9 +161,10 @@ export default function RoadIdentity() {
         {t('road_identity_description')}
       </div>
 
-      {!lastPosition && <div className="card">{t('road_identity_location')}</div>}
+      {!here && <div className="card">{t('road_identity_location')}</div>}
+      {!lastPosition && here && here.at && <div className="status-line">Using your last known position ({fixAge(here.at)}) until live GPS is available.</div>}
 
-      {roads.length === 0 && lastPosition && (
+      {roads.length === 0 && here && (segments || !status) && (
         <div className="card">{t('unnamed_nearby_none')}</div>
       )}
 
@@ -111,7 +174,7 @@ export default function RoadIdentity() {
             <div><b>{road.name_status === 'unnamed' ? 'Unnamed Road' : road.name}</b><div className="status-line">{road.road_code} · {road.distance_km} km away</div></div>
             <span style={{ color: '#173A59', background: '#F2C94C', fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{road.name_status}</span>
           </div>
-          <div className="status-line">{road.unique_passers} traveller(s) · {road.submission_count} name submission(s)</div>
+          {road.unique_passers != null && <div className="status-line">{road.unique_passers} traveller(s) · {road.submission_count} name submission(s)</div>}
           {road.suggested_name && <div style={{ marginTop: 5 }}>{t('suggested')} <b>{road.suggested_name}</b></div>}
           <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => choose(road)}>{t('suggest_confirm_local')}</button>
         </div>

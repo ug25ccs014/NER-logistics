@@ -1,8 +1,30 @@
+import { saveSnapshot, loadSnapshot, announceDataStatus } from './utils/offlineCache.js';
+
 // In development, use the Vite /api proxy so the browser never needs
 // to connect directly to FastAPI (avoids CORS/localhost-origin problems).
 // For production, set VITE_API_BASE to the public API base URL.
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const TOKEN_KEY = 'ner_token';
+
+// Read-only lists that are saved on the device after every successful load and shown from that
+// saved copy when there is no connection (or the server is asleep / unreachable), instead of an error.
+// Chat, live location, login and anything personal are deliberately NOT in this list.
+const CACHEABLE_GET = [/^\/field-reports\?/, /^\/alerts(\?|$)/, /^\/districts\/status/, /^\/trips/, /^\/shipment-board/];
+const isCacheableGet = (path, options) =>
+  (!options.method || String(options.method).toUpperCase() === 'GET') && CACHEABLE_GET.some((re) => re.test(path));
+const cacheKeyFor = (path) => `api-${encodeURIComponent(path)}`;
+
+// -> saved response or undefined (and tells the status pill we are showing saved data)
+async function serveSaved(path) {
+  try {
+    const snap = await loadSnapshot(cacheKeyFor(path));
+    if (snap && snap.data !== undefined) {
+      announceDataStatus({ stale: true, savedAt: snap.savedAt });
+      return { data: snap.data };
+    }
+  } catch { /* nothing saved */ }
+  return undefined;
+}
 
 // "Remember me" (see AuthContext.jsx) puts the token in localStorage
 // when checked, sessionStorage when not -- check both so requests
@@ -23,7 +45,15 @@ async function request(path, options = {}) {
       ...options,
     });
   } catch (err) {
-    const netErr = new Error(`Cannot reach the FastAPI backend. Make sure it is running on port 8000.`);
+    if (isCacheableGet(path, options)) {
+      const saved = await serveSaved(path);
+      if (saved) return saved.data;
+    }
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    console.warn(`[api] request to ${API_BASE}${path} failed:`, err);
+    const netErr = new Error(offline
+      ? 'You are offline. This works again once you have a connection.'
+      : 'Cannot reach the server right now. Check your connection and try again in a moment.');
     netErr.isNetworkError = true;   // lets offlineQueue tell "no connection" from "server said no"
     throw netErr;
   }
@@ -41,12 +71,18 @@ async function request(path, options = {}) {
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { /* not JSON */ }
+    if ([502, 503, 504].includes(res.status) && isCacheableGet(path, options)) {
+      const saved = await serveSaved(path);   // server asleep / gateway error: saved copy beats an error
+      if (saved) return saved.data;
+    }
     const httpErr = new Error(detail || `API ${path} returned ${res.status}`);
     httpErr.status = res.status;   // lets callers tell a sleeping/unreachable server (502-504) from a real 'no'
     throw httpErr;
   }
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  const parsed = text ? JSON.parse(text) : null;
+  if (parsed !== null && isCacheableGet(path, options)) saveSnapshot(cacheKeyFor(path), parsed);
+  return parsed;
 }
 
 function clearSessionAndReload() {

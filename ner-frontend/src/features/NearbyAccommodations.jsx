@@ -5,6 +5,8 @@ import { useMap } from '../context/MapContext.jsx';
 import { useGeolocation } from '../hooks/useGeolocation.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
+import { rememberStays, nearbyStaysOffline } from '../utils/offlineStays.js';
+import { fixAge } from '../utils/gps.js';
 
 function accommodationIcon() {
   return L.divIcon({
@@ -37,6 +39,30 @@ export default function NearbyAccommodations() {
     markersRef.current = [];
   };
 
+  const showStays = (hotels, note) => {
+    clearMarkers();
+    if (map) {
+      markersRef.current = hotels.map((h) => {
+        const marker = L.marker([h.lat, h.lon], { icon: accommodationIcon() }).addTo(map);
+        marker.bindPopup(popupHtml(h, t));
+        return marker;
+      });
+    }
+    setResults(hotels);
+    setStatus(note);
+  };
+
+  // Offline (or server unreachable): use the stays saved on this device.
+  const showSaved = async (pos, prefix) => {
+    const saved = await nearbyStaysOffline(pos.lat, pos.lon);
+    if (saved.items.length === 0) {
+      setStatus(`${prefix} No saved stays near here yet. Open Nearby Stays once while you have a signal in the area you will travel through, and they will be saved for offline use.`);
+      return;
+    }
+    const when = saved.savedAt ? fixAge(new Date(saved.savedAt).getTime()) : 'earlier';
+    showStays(saved.items, `${prefix} Showing stays saved on this device (updated ${when}). Phone numbers and availability may have changed.`);
+  };
+
   const search = async () => {
     setStatus('Getting your location...');
     setResults([]);
@@ -48,25 +74,31 @@ export default function NearbyAccommodations() {
       return;
     }
     placeCurrentLocationMarker(map, pos.lat, pos.lon);
+    const gpsNote = pos.fromCache ? ` (no live GPS - using your last known position from ${fixAge(pos.at)})` : '';
+
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      setStatus('You are offline. Finding nearby accommodation needs an internet connection - your location is marked on the map.');
+      await showSaved(pos, `You are offline${gpsNote}.`);
       return;
     }
-    setStatus(pos.fromCache ? 'No live GPS - searching around your last known position...' : 'Looking for nearby accommodation...');
+
+    setStatus(pos.fromCache ? `No live GPS - searching around your last known position (${fixAge(pos.at)})...` : 'Looking for nearby accommodation...');
     try {
       const hotels = await api.nearbyAccommodations(pos.lat, pos.lon);
-      clearMarkers();
-      if (map) {
-        markersRef.current = hotels.map((h) => {
-          const marker = L.marker([h.lat, h.lon], { icon: accommodationIcon() }).addTo(map);
-          marker.bindPopup(popupHtml(h, t));
-          return marker;
-        });
+      if (hotels.length === 0) {
+        // The free map service sometimes answers with nothing when it is busy: fall back to saved stays if there are any.
+        const saved = await nearbyStaysOffline(pos.lat, pos.lon);
+        if (saved.items.length) { await showSaved(pos, 'Live search found nothing.'); return; }
+        showStays([], 'No nearby accommodation found within 15km.');
+        return;
       }
-      setResults(hotels);
-      setStatus(hotels.length === 0 ? 'No nearby accommodation found within 15km.' : null);
+      rememberStays(hotels);
+      showStays(hotels, null);
     } catch (err) {
-      setStatus(err?.isNetworkError ? 'Could not reach the server. Check your connection and try again.' : err.message);
+      if (err?.isNetworkError || [502, 503, 504].includes(err?.status)) {
+        await showSaved(pos, 'Could not reach the server.');
+      } else {
+        setStatus(err.message);
+      }
     }
   };
 

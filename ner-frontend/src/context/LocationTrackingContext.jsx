@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { api } from '../api.js';
 import { useAuth } from './AuthContext.jsx';
 import { rememberFix } from '../utils/gps.js';
+import { prefetchStays } from '../utils/offlineStays.js';
 
 // App-wide live-location presence. This is intentionally mounted at the
 // authenticated app shell, not inside LiveLocationSos, so users remain
@@ -48,6 +49,7 @@ export function LocationTrackingProvider({ children }) {
     setLastPosition(current);
     rememberFix(pos);   // last-known position survives offline / app restarts
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;   // no signal: GPS keeps running, upload resumes on reconnect
+    prefetchStays(lat, lon);   // while there is a signal, save nearby stays on the device for offline use
     api.postLocation(
       sessionId,
       name || 'Unknown user',
