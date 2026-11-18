@@ -4,6 +4,7 @@ import { useMap } from '../context/MapContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
 import { pulsingDotIcon, simPositionIcon } from '../utils/mapIcons.js';
 import { haversineKm } from '../utils/geo.js';
+import { rememberFix, getLastKnownFix, fixAge } from '../utils/gps.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 
 // Ported from startRealRide() / startSimulatedRide() / stopRide().
@@ -80,6 +81,7 @@ export default function RidePanel() {
     if (realGpsWatchRef.current !== null || !navigator.geolocation) return;
     realGpsWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        rememberFix(position);
         if (!map) return;
         const pos = [position.coords.latitude, position.coords.longitude];
         if (!realGpsMarkerRef.current) {
@@ -124,6 +126,7 @@ export default function RidePanel() {
     setGpsStatus('Getting your location…');
     rideWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        rememberFix(position);
         if (!map) return; // MapView between mounts (tool-switch race) -- next fix will retry
         const pos = [position.coords.latitude, position.coords.longitude];
         if (!realGpsMarkerRef.current) {
@@ -150,6 +153,16 @@ export default function RidePanel() {
         // tree cover, and watchPosition keeps retrying on its own -- a
         // quiet inline status instead of a blocking alert on every retry
         // is what actually made this look "broken/frozen" before.
+        // No live fix yet: show the last known position (clearly labelled) instead of an empty map.
+        const last = getLastKnownFix();
+        if (last && map && !realGpsMarkerRef.current) {
+          const lp = [last.lat, last.lon];
+          realGpsMarkerRef.current = L.marker(lp, { icon: pulsingDotIcon() }).addTo(map);
+          map.panTo(lp);
+          updatePanel(lp, '📍 Last known position (waiting for live GPS)');
+          setGpsStatus(`Waiting for a live GPS signal… showing your last known position (${fixAge(last.at)}).`);
+          return;
+        }
         setGpsStatus('Waiting for a GPS signal… this can take a moment indoors or under tree cover.');
       },
       // A stale fix up to 20s old and a 30s timeout (up from 5s/15s)

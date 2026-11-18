@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from './AuthContext.jsx';
+import { rememberFix } from '../utils/gps.js';
 
 // App-wide live-location presence. This is intentionally mounted at the
 // authenticated app shell, not inside LiveLocationSos, so users remain
@@ -45,6 +46,8 @@ export function LocationTrackingProvider({ children }) {
     const current = { lat, lon, accuracy: pos.coords.accuracy ?? null };
     positionRef.current = current;
     setLastPosition(current);
+    rememberFix(pos);   // last-known position survives offline / app restarts
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;   // no signal: GPS keeps running, upload resumes on reconnect
     api.postLocation(
       sessionId,
       name || 'Unknown user',
@@ -159,6 +162,17 @@ export function LocationTrackingProvider({ children }) {
     // stable enough for this lifecycle and uses refs for mutable state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, sessionId, apiRole]);
+
+  // Back online: immediately tell the server where we are instead of waiting for the next GPS tick.
+  useEffect(() => {
+    const onOnline = () => {
+      const p = positionRef.current;
+      if (!p || !activeRef.current) return;
+      api.postLocation(sessionId, name || 'Unknown user', phone || null, apiRole || 'driver', p.lat, p.lon, statusRef.current).catch(() => {});
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [name, phone, apiRole, sessionId]);
 
   // Keep the latest account data in the location payload after login.
   useEffect(() => {

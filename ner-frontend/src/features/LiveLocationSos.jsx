@@ -8,6 +8,7 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import OfflineSosCard from './OfflineSosCard.jsx';
 import { placeCurrentLocationMarker } from '../utils/mapIcons.js';
+import { getBestFix, gpsErrorMessage } from '../utils/gps.js';
 
 // This replaces the old "Nearby Help (Live Location)" panel that had
 // a <select id="driverRole"> letting a Field Reporter re-declare
@@ -90,6 +91,10 @@ export default function LiveLocationSos() {
   };
 
   const refreshNearbyPeople = async (lat, lon) => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setStuckResults({ error: 'You are offline, so nearby people cannot be loaded. Use the red offline SOS box above: it sends your GPS location by SMS / phone call.' });
+      return;
+    }
     try {
       const nearby = await api.nearbyPeople(lat, lon, sessionId, 25);
       markersRef.current.forEach((m) => map && map.removeLayer(m));
@@ -188,11 +193,9 @@ export default function LiveLocationSos() {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => search(pos.coords.latitude, pos.coords.longitude),
-      (err) => setStuckResults({ error: err.message }),
-      { enableHighAccuracy: true }
-    );
+    getBestFix()
+      .then((pos) => search(pos.coords.latitude, pos.coords.longitude))
+      .catch((err) => setStuckResults({ error: gpsErrorMessage(err) }));
   };
 
   const viewStuckOnMap = () => {

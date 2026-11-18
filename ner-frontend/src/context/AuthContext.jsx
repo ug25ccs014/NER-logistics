@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react';
-import { clearSnapshots } from '../utils/offlineCache.js';
+import { clearUserSnapshots } from '../utils/offlineCache.js';
+import { clearLastFix } from '../utils/gps.js';
 
 // ============================================================
 // Single source of truth for "who is logged in and as what".
@@ -141,7 +142,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    clearSnapshots(); // don't leave saved routes/places on a shared phone
+    clearUserSnapshots(); // don't leave saved routes/trips on a shared phone (public road data is kept for offline use)
+    clearLastFix();       // ...or this person's last known position
     // NOTE: the saved offline sign-in is deliberately KEPT on logout (it expires on its own
     // after 7 days, see utils/offlineAuth.js) so the person can sign back in with no signal.
     localStorage.removeItem('ner_token');

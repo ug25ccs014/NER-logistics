@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { useMap } from '../context/MapContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { buildFieldReportPayload, submitOrQueue } from '../utils/offlineQueue.js';
+import { getBestFix, fixAge } from '../utils/gps.js';
 
 // Downscales + JPEG-compresses the photo client-side before it goes
 // over (often very slow) NER mobile networks. Returns a base64 data
@@ -53,6 +54,7 @@ export default function FieldReportForm({ onSubmitted }) {
   const posRef = useRef(null);
   const pinRef = useRef(null);
   const clickHandlerRef = useRef(null);
+  const gpsRunRef = useRef(0);   // bumped on start/cancel so a late GPS answer can't drop a pin after Cancel
 
   const onPhotoSelected = async (e) => {
     const file = e.target.files?.[0];
@@ -88,17 +90,22 @@ export default function FieldReportForm({ onSubmitted }) {
       setLocationStatus(t('gps_unavailable_click_map'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    // Shared GPS helper: precise fix -> coarse fix -> last known position (works with no signal).
+    gpsRunRef.current += 1;
+    const run = gpsRunRef.current;
+    getBestFix()
+      .then((pos) => {
+        if (run !== gpsRunRef.current || !map) return;     // cancelled meanwhile
         setPin(pos.coords.latitude, pos.coords.longitude);
-        setLocationStatus(t('location_set_from_gps'));
-      },
-      () => setLocationStatus(t('could_not_get_gps_click_map')),
-      { timeout: 8000 }
-    );
+        setLocationStatus(pos.fromCache
+          ? `Using your last known position (${fixAge(pos.fixedAt)}) - no live GPS signal. Tap the map to move the pin if it is wrong.`
+          : t('location_set_from_gps'));
+      })
+      .catch(() => { if (run === gpsRunRef.current) setLocationStatus(t('could_not_get_gps_click_map')); });
   };
 
   const cancel = () => {
+    gpsRunRef.current += 1;
     setOpen(false);
     if (pinRef.current) { map.removeLayer(pinRef.current); pinRef.current = null; }
     if (clickHandlerRef.current && map) map.off('click', clickHandlerRef.current);

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, resolvePhotoUrl } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { rememberFix, getLastKnownFix, fixAge } from '../utils/gps.js';
 
 function formatPct(v) {
   return `${Math.round((Number(v) || 0) * 100)}%`;
@@ -70,12 +71,23 @@ export default function LiveDashcamAI() {
     if (!navigator.geolocation) return;
     geoWatchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        rememberFix(pos);
         if (manualOverrideRef.current) return; // don't clobber a manual override
         setLat(pos.coords.latitude);
         setLon(pos.coords.longitude);
         setLocationStatus('Live GPS');
       },
-      () => setLocationStatus('GPS unavailable — using last coordinates'),
+      () => {
+        if (manualOverrideRef.current) return;
+        const last = getLastKnownFix();
+        if (last) {
+          setLat(last.lat);
+          setLon(last.lon);
+          setLocationStatus(`GPS unavailable — using last known position (${fixAge(last.at)})`);
+        } else {
+          setLocationStatus('GPS unavailable — using last coordinates');
+        }
+      },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     );
     return () => {

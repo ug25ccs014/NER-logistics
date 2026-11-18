@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { haversineKm } from '../utils/geo.js';
-import { getBestFix, gpsErrorMessage } from '../utils/gps.js';
+import { getBestFix, gpsErrorMessage, fixAge } from '../utils/gps.js';
 
 // Emergency help that does NOT need a data connection:
 //  - GPS works with no signal at all
@@ -41,7 +41,7 @@ export default function OfflineSosCard({ name, phone }) {
     return [
       'EMERGENCY - I need help.',
       name ? `Name: ${name}${phone ? `, phone: ${phone}` : ''}.` : phone ? `Phone: ${phone}.` : null,
-      `Location: ${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}${f.acc ? ` (accuracy ~${Math.round(f.acc)} m)` : ''}.`,
+      `Location: ${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}${f.acc ? ` (accuracy ~${Math.round(f.acc)} m)` : ''}${f.fromCache ? ` - LAST KNOWN position from ${fixAge(f.at)}, live GPS not available` : ''}.`,
       road ? `Near: ${road.name} (~${road.km < 1 ? '<1' : road.km.toFixed(1)} km).` : null,
       `Map: https://maps.google.com/?q=${f.lat.toFixed(5)},${f.lon.toFixed(5)}`,
       `Time: ${when}.`,
@@ -52,8 +52,9 @@ export default function OfflineSosCard({ name, phone }) {
     setGpsMsg('…');
     try {
       const pos = await getBestFix();
-      const f = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
-      setFix(f); setMessage(build(f)); setGpsMsg(null);
+      const f = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy, fromCache: Boolean(pos.fromCache), at: pos.fixedAt };
+      setFix(f); setMessage(build(f));
+      setGpsMsg(f.fromCache ? `No live GPS signal - using your last known position (${fixAge(f.at)}). Move to open sky and tap again for a fresh one.` : null);
     } catch (err) {
       setGpsMsg(gpsErrorMessage(err));
     }

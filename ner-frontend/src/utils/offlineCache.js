@@ -35,6 +35,21 @@ export async function clearSnapshots() {
   try { Object.keys(localStorage).filter((k) => k.startsWith(LS_PREFIX)).forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
 }
 
+// Called on logout. Wipes only PERSONAL snapshots (last planned route, saved trips).
+// The road network + risk scores ('segments', 'connections') are public data and are
+// KEPT, otherwise a person who logs out and signs back in with no signal (offline
+// login) would land in an app with an empty map and no offline routing.
+const PERSONAL_KEYS = ['last-route', 'saved-trips'];
+export async function clearUserSnapshots() {
+  try {
+    if (typeof caches !== 'undefined') {
+      const cache = await caches.open(CACHE_NAME);
+      await Promise.all(PERSONAL_KEYS.map((k) => cache.delete(`/__snapshot/${k}`)));
+    }
+  } catch { /* ignore */ }
+  try { PERSONAL_KEYS.forEach((k) => localStorage.removeItem(LS_PREFIX + k)); } catch { /* ignore */ }
+}
+
 // Broadcasts data freshness so the status banner (outside the React data providers) can show it.
 export function announceDataStatus(detail) {
   window.dispatchEvent(new CustomEvent('ner-data-status', { detail }));

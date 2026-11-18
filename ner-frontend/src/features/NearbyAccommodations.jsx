@@ -48,7 +48,11 @@ export default function NearbyAccommodations() {
       return;
     }
     placeCurrentLocationMarker(map, pos.lat, pos.lon);
-    setStatus('Looking for nearby accommodation...');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setStatus('You are offline. Finding nearby accommodation needs an internet connection - your location is marked on the map.');
+      return;
+    }
+    setStatus(pos.fromCache ? 'No live GPS - searching around your last known position...' : 'Looking for nearby accommodation...');
     try {
       const hotels = await api.nearbyAccommodations(pos.lat, pos.lon);
       clearMarkers();
@@ -62,7 +66,7 @@ export default function NearbyAccommodations() {
       setResults(hotels);
       setStatus(hotels.length === 0 ? 'No nearby accommodation found within 15km.' : null);
     } catch (err) {
-      setStatus(err.message);
+      setStatus(err?.isNetworkError ? 'Could not reach the server. Check your connection and try again.' : err.message);
     }
   };
 
