@@ -39,6 +39,30 @@ function useGujaratData(path, refreshKey = 0) {
   return { data, error, loading };
 }
 
+function useGujaratBundle(paths) {
+  const key = paths.join('|');
+  const [data, setData] = useState([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    Promise.all(paths.map(path => gujaratRequest(path)))
+      .then(results => { if (active) setData(results); })
+      .catch(err => { if (active) setError(err.message || 'Unable to load regional records.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [key]);
+  return { data, error, loading };
+}
+
+function RegistryGroup({ title, records, emptyText, getName, getDetail }) {
+  return <section className="gj-registry-group"><div className="gj-registry-heading"><strong>{title}</strong><span>{records.length} records</span></div>
+    {records.length === 0 ? <p className="gj-registry-empty">{emptyText}</p> : <div className="gj-record-list">{records.map((record, index) => <article className="gj-record" key={record.id || index}><div><strong>{getName(record)}</strong><small>{getDetail(record)}</small></div><StatusPill value={record.data_status} /></article>)}</div>}
+  </section>;
+}
+
 function LoadingState() {
   return <div className="gj-state">Loading regional data…</div>;
 }
@@ -184,6 +208,42 @@ function RecordsPage({ section }) {
   );
 }
 
+function WaterwaysPage() {
+  const paths = ['/waterways', '/waterways/segments', '/waterways/terminals', '/waterways/vessels', '/waterways/schedules'];
+  const { data, error, loading } = useGujaratBundle(paths);
+  const [waterways, segments, terminals, vessels, schedules] = data;
+  return <>
+    <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / WATERWAYS</span><h1>Waterways</h1><p>Registry and operational evidence for inland water transport.</p></div><StatusPill value="UNVERIFIED" /></div>
+    {loading && <LoadingState />}
+    {error && <ErrorState message={error} />}
+    {!loading && !error && <>
+      <div className="gj-notice"><strong>Navigation status is not assumed</strong><p>A National Waterway designation or feasibility study does not prove commercial navigability, vessel service, or available cargo capacity on a particular stretch.</p></div>
+      <RegistryGroup title="Waterway registry" records={waterways || []} emptyText="No waterway references registered." getName={r => r.name} getDetail={r => `${r.river_name || 'River'} · ${r.national_waterway_number || 'No NW number'} · ${r.operational_status}`} />
+      <RegistryGroup title="Waterway segments" records={segments || []} emptyText="No segment-level navigability data. Do not infer navigability from a registry entry." getName={r => r.segment_code || `Segment ${r.id}`} getDetail={r => `${r.waterway_name} · ${r.navigability_status}`} />
+      <RegistryGroup title="Terminals" records={terminals || []} emptyText="No verified waterway terminals registered." getName={r => r.name} getDetail={r => r.operational_status} />
+      <RegistryGroup title="Vessels" records={vessels || []} emptyText="No vessel/operator availability records." getName={r => r.vessel_code || r.operator || `Vessel ${r.id}`} getDetail={r => `${r.vessel_type || 'Vessel type unknown'} · ${r.availability_status}`} />
+      <RegistryGroup title="Schedules" records={schedules || []} emptyText="No vessel schedules. No freight service is being represented as live." getName={r => `${r.origin_terminal} → ${r.destination_terminal}`} getDetail={r => r.departure_at ? new Date(r.departure_at).toLocaleString() : 'Departure not published'} />
+    </>}
+  </>;
+}
+
+function AirwaysPage() {
+  const paths = ['/airways/airports', '/airways/airlines', '/airways/flights'];
+  const { data, error, loading } = useGujaratBundle(paths);
+  const [airports, airlines, flights] = data;
+  return <>
+    <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / AIRWAYS</span><h1>Airways</h1><p>Airport reference data, air-cargo providers and flight availability.</p></div><StatusPill value="REFERENCE DATA" /></div>
+    {loading && <LoadingState />}
+    {error && <ErrorState message={error} />}
+    {!loading && !error && <>
+      <div className="gj-notice"><strong>Reference data versus live capacity</strong><p>Airport and cargo-terminal references do not imply that airline schedules, cargo capacity, rates or booking integrations are connected.</p></div>
+      <RegistryGroup title="Airports" records={airports || []} emptyText="No airport references registered." getName={r => `${r.name} ${r.iata_code ? `(${r.iata_code})` : ''}`} getDetail={r => `${r.icao_code || 'ICAO unknown'} · ${r.operational_status}`} />
+      <RegistryGroup title="Air-cargo providers" records={airlines || []} emptyText="No airline cargo-provider records registered." getName={r => r.name} getDetail={r => r.airline_code || 'Provider reference not supplied'} />
+      <RegistryGroup title="Flight schedules and capacity" records={flights || []} emptyText="No verified flight cargo schedules or available capacity. Add only from an authorised source." getName={r => `${r.flight_number || 'Flight'} · ${r.origin_iata || '?'} → ${r.destination_iata || '?'}`} getDetail={r => r.scheduled_departure ? new Date(r.scheduled_departure).toLocaleString() : 'Schedule not published'} />
+    </>}
+  </>;
+}
+
 function MultimodalPage() {
   const { data, error, loading } = useGujaratData('/multimodal/status');
   return <>
@@ -232,8 +292,8 @@ export default function GujaratModule() {
         <div className="gj-content"><Routes>
           <Route index element={<OverviewPage />} />
           <Route path="roadways" element={<RecordsPage section="roadways" />} />
-          <Route path="waterways" element={<RecordsPage section="waterways" />} />
-          <Route path="airways" element={<RecordsPage section="airways" />} />
+          <Route path="waterways" element={<WaterwaysPage />} />
+          <Route path="airways" element={<AirwaysPage />} />
           <Route path="multimodal" element={<MultimodalPage />} />
           <Route path="shipments" element={<RecordsPage section="shipments" />} />
           <Route path="tracking" element={<TrackingPage />} />
