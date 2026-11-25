@@ -13,7 +13,7 @@ def _load_graph():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT s.id, s.name, s.corridor, s.status,
+                SELECT s.id, s.name, s.corridor, s.status, s.data_status,
                        COALESCE(s.normal_travel_min, 15) AS normal_travel_min,
                        COALESCE(r.risk_score, 0) AS risk_score,
                        COALESCE(r.risk_level, 'low') AS risk_level
@@ -37,12 +37,13 @@ def _load_graph():
 
     graph = nx.Graph()
     for row in segment_rows:
-        segment_id, name, corridor, status, travel_min, risk_score, risk_level = row
+        segment_id, name, corridor, status, data_status, travel_min, risk_score, risk_level = row
         graph.add_node(
             int(segment_id),
             name=name,
             corridor=corridor,
             status=status,
+            data_status=data_status,
             normal_travel_min=float(travel_min or 15),
             risk_score=float(risk_score or 0),
             risk_level=risk_level or "low",
@@ -89,13 +90,14 @@ def _route(graph, start_id, end_id, mode):
             "travel_min": round(segment_time, 1),
             "risk_score": round(node["risk_score"], 1),
             "risk_level": node["risk_level"],
+            "data_status": node["data_status"],
         })
 
     return {
         "mode": mode,
         "total_time_min": round(total, 1),
         "segments": segments,
-        "data_status": "UNVERIFIED" if any(s["risk_score"] == 0 for s in segments) else "UNVERIFIED",
+        "data_status": ("DEMO" if any(s["data_status"] == "DEMO" for s in segments) else "SIMULATED" if any(s["data_status"] == "SIMULATED" for s in segments) else "VERIFIED" if all(s["data_status"] == "VERIFIED" for s in segments) else "UNVERIFIED"),
     }
 
 
