@@ -13,6 +13,7 @@ from typing import Optional
 
 import auth
 import db
+from gujarat.services.roadways import compare_routes
 
 router = APIRouter(tags=["Gujarat Logistics"])
 _bearer = HTTPBearer(auto_error=False)
@@ -113,6 +114,26 @@ def gujarat_road_segments(current: dict = Depends(current_account), limit: int =
     return {"type": "FeatureCollection", "features": features, "region": "GUJARAT"}
 
 
+@router.get("/roadways/connections")
+def gujarat_road_connections(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT id, segment_a_id, segment_b_id, junction_name
+        FROM gujarat_segment_connections ORDER BY id
+    """)
+
+
+@router.get("/roadways/route")
+def gujarat_road_route(
+    start: int = Query(..., ge=1, description="Gujarat road segment ID"),
+    end: int = Query(..., ge=1, description="Gujarat road segment ID"),
+    current: dict = Depends(current_account),
+):
+    result = compare_routes(start, end)
+    if result.get("fastest") is None and result.get("safest") is None:
+        raise HTTPException(status_code=404, detail=result.get("reason", "No Gujarat route found"))
+    return result
+
+
 @router.get("/waterways")
 def gujarat_waterways(current: dict = Depends(current_account)):
     return _fetch_all("""
@@ -133,6 +154,44 @@ def gujarat_waterway_terminals(current: dict = Depends(current_account)):
     """)
 
 
+@router.get("/waterways/segments")
+def gujarat_waterway_segments(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT s.id, s.waterway_id, w.name AS waterway_name, s.segment_code,
+               s.navigability_status, s.depth_m, s.required_draft_m,
+               s.permitted_vessel_class, s.seasonal_restrictions,
+               s.data_status, s.source_name, s.source_url, s.last_verified_at
+        FROM gujarat_waterway_segments s
+        JOIN gujarat_waterways w ON w.id = s.waterway_id
+        ORDER BY w.name, s.id
+    """)
+
+
+@router.get("/waterways/vessels")
+def gujarat_waterway_vessels(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT id, vessel_code, operator, vessel_type, capacity_tonnes,
+               availability_status, cargo_types, data_status,
+               source_name, source_url, last_verified_at
+        FROM gujarat_vessels ORDER BY vessel_code
+    """)
+
+
+@router.get("/waterways/schedules")
+def gujarat_waterway_schedules(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT s.id, s.departure_at, s.arrival_estimate,
+               s.capacity_available_tonnes, s.booking_status, s.data_status,
+               o.name AS origin_terminal, d.name AS destination_terminal,
+               v.vessel_code, s.source_name, s.source_url, s.last_verified_at
+        FROM gujarat_vessel_schedules s
+        JOIN gujarat_waterway_terminals o ON o.id = s.origin_terminal_id
+        JOIN gujarat_waterway_terminals d ON d.id = s.destination_terminal_id
+        LEFT JOIN gujarat_vessels v ON v.id = s.vessel_id
+        ORDER BY s.departure_at NULLS LAST
+    """)
+
+
 @router.get("/airways/airports")
 def gujarat_airports(current: dict = Depends(current_account)):
     return _fetch_all("""
@@ -141,6 +200,49 @@ def gujarat_airports(current: dict = Depends(current_account)):
                ST_Y(location) AS latitude, ST_X(location) AS longitude
         FROM gujarat_airports ORDER BY name
     """)
+
+
+@router.get("/airways/airlines")
+def gujarat_airlines(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT id, airline_code, name, cargo_provider_reference,
+               data_status, source_name, source_url
+        FROM gujarat_airlines ORDER BY name
+    """)
+
+
+@router.get("/airways/flights")
+def gujarat_air_cargo_flights(current: dict = Depends(current_account)):
+    return _fetch_all("""
+        SELECT f.id, f.flight_number, f.scheduled_departure, f.estimated_arrival,
+               f.cargo_capacity_kg, f.available_capacity_kg, f.schedule_status,
+               f.data_status, f.source_name, f.source_url, f.last_verified_at,
+               o.iata_code AS origin_iata, o.name AS origin_airport,
+               d.iata_code AS destination_iata, d.name AS destination_airport,
+               a.name AS airline
+        FROM gujarat_air_cargo_flights f
+        JOIN gujarat_airports o ON o.id = f.origin_airport_id
+        JOIN gujarat_airports d ON d.id = f.destination_airport_id
+        LEFT JOIN gujarat_airlines a ON a.id = f.airline_id
+        ORDER BY f.scheduled_departure NULLS LAST
+    """)
+
+
+@router.get("/multimodal/status")
+def gujarat_multimodal_status(current: dict = Depends(current_account)):
+    counts = _fetch_one("""
+        SELECT
+          (SELECT COUNT(*) FROM gujarat_road_segments WHERE data_status = 'VERIFIED') AS verified_road_segments,
+          (SELECT COUNT(*) FROM gujarat_waterway_segments WHERE data_status = 'VERIFIED' AND navigability_status = 'VERIFIED') AS verified_navigable_waterway_segments,
+          (SELECT COUNT(*) FROM gujarat_vessel_schedules WHERE data_status = 'VERIFIED' AND booking_status = 'CONFIRMED') AS confirmed_vessel_schedules,
+          (SELECT COUNT(*) FROM gujarat_air_cargo_flights WHERE data_status = 'VERIFIED' AND schedule_status = 'CONFIRMED') AS confirmed_air_cargo_flights
+    """)
+    return {
+        "region": "GUJARAT",
+        "readiness": counts,
+        "optimizer_status": "NOT_READY",
+        "reason": "The optimizer will only recommend modes after regional road connectivity, verified waterway navigability/capacity, and authorised air-cargo schedule data are available.",
+    }
 
 
 @router.get("/shipments")
