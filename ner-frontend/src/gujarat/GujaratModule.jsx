@@ -142,8 +142,9 @@ function RecordsPage({ section }) {
       {loading && <LoadingState />}
       {error && <ErrorState message={error} />}
       {!loading && !error && Array.isArray(data) && data.length === 0 && <EmptyState title={config.empty} detail={config.detail} />}
-      {!loading && !error && Array.isArray(data) && data.length > 0 && <div className="gj-record-list">{data.map((record, index) => <article className="gj-record" key={record.id || record.iata_code || index}><div><strong>{record.name || record.public_reference || record.iata_code || 'Record'}</strong><small>{record.river_name || record.cargo_type || record.origin_label || record.operational_status || 'Regional record'}</small></div><StatusPill value={record.data_status} /></article>)}</div>}
+      {!loading && !error && Array.isArray(data) && data.length > 0 && <div className="gj-record-list">{data.map((record, index) => <article className="gj-record" key={record.id || record.iata_code || index}><div><strong>{record.name || record.public_reference || record.iata_code || 'Record'}</strong><small>{record.river_name || record.cargo_type || record.origin_label || record.operational_status || 'Regional record'}{record.public_reference ? ` · ${record.weight_kg} kg` : ''}</small></div><StatusPill value={record.data_status} />{record.id && section === 'shipments' && <Link className="gj-record-link" to={`/gujarat/tracking?shipment=${encodeURIComponent(record.id)}`}>Track ↗</Link>}</article>)}</div>}
       {section === 'roadways' && !loading && !error && data?.features?.length === 0 && <EmptyState title={config.empty} detail={config.detail} />}
+      {section === 'roadways' && !loading && !error && data?.features?.length > 0 && <div className="gj-record-list">{data.features.map((feature) => <article className="gj-record" key={feature.properties.id}><div><strong>{feature.properties.name}</strong><small>{feature.properties.corridor || 'Gujarat'} · {feature.properties.length_km ?? 'Length unknown'} km</small></div><StatusPill value={feature.properties.data_status} /></article>)}</div>}
     </>
   );
 }
@@ -153,7 +154,8 @@ function MultimodalPage() {
 }
 
 function TrackingPage() {
-  const [reference, setReference] = useState('');
+  const initialReference = new URLSearchParams(window.location.search).get('shipment') || '';
+  const [reference, setReference] = useState(initialReference);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   async function search(event) {
