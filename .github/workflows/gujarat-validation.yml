@@ -1,0 +1,146 @@
+name: Gujarat module validation
+
+on:
+  push:
+    branches:
+      - gujarat-module
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "api/**"
+      - "DB/**"
+      - "ner-frontend/**"
+      - "osm_imports/import_gujarat_roads.py"
+      - ".github/workflows/gujarat-validation.yml"
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ner-frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: ner-frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: ner-frontend
+        run: npm run build
+
+  backend-and-migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: ner_logistics
+          POSTGRES_USER: ner_admin
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ner_admin -d ner_logistics"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: ner_logistics
+      DB_USER: ner_admin
+      DB_PASSWORD: ci-test-password
+      JWT_SECRET: ci-only-secret-not-for-deployment
+      FIELD_OFFICER_PASSKEY: ci-field-passkey
+      AUTHORITY_PASSKEY: ci-authority-passkey
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install API dependencies
+        run: python -m pip install -r api/requirements.txt
+      - name: Parse changed Python entry points
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = [
+              Path("api/main.py"),
+              *Path("api/gujarat").rglob("*.py"),
+              Path("osm_imports/import_gujarat_roads.py"),
+          ]
+          for path in files:
+              compile(path.read_text(encoding="utf-8"), str(path), "exec")
+          print(f"Parsed {len(files)} Python files.")
+          PY
+      - name: Apply base schema
+        run: PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f DB/schema.sql
+      - name: Apply Gujarat migration
+        run: PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f DB/migration_005_gujarat_module.sql
+      - name: Seed sourced reference records
+        run: PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f DB/seed_gujarat_reference_data.sql
+      - name: Start API and run authenticated smoke tests
+        working-directory: api
+        run: |
+          uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/gujarat-api.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health
+          python - <<'PY'
+          import requests
+
+          base = "http://127.0.0.1:8000"
+          session = requests.Session()
+          registered = session.post(base + "/auth/register", json={
+              "full_name": "Gujarat CI Test",
+              "phone": "9999999999",
+              "password": "ci-test-password",
+              "role": "driver",
+          })
+          assert registered.status_code in (200, 409), registered.text
+          login = session.post(base + "/auth/login", json={
+              "phone": "9999999999",
+              "password": "ci-test-password",
+          })
+          assert login.status_code == 200, login.text
+          token = login.json()["token"]
+          headers = {"Authorization": "Bearer " + token}
+
+          overview = session.get(base + "/gujarat/overview", headers=headers)
+          assert overview.status_code == 200, overview.text
+          assert overview.json()["region"] == "GUJARAT"
+
+          airports = session.get(base + "/gujarat/airways/airports", headers=headers)
+          assert airports.status_code == 200, airports.text
+          assert any(row["iata_code"] == "AMD" for row in airports.json())
+
+          created = session.post(base + "/gujarat/shipments", headers=headers, json={
+              "origin_label": "Gandhinagar",
+              "destination_label": "Ahmedabad",
+              "cargo_type": "General",
+              "weight_kg": 25,
+          })
+          assert created.status_code == 201, created.text
+          shipment_id = created.json()["id"]
+
+          tracking = session.get(base + f"/gujarat/shipments/{shipment_id}/tracking", headers=headers)
+          assert tracking.status_code == 200, tracking.text
+          assert len(tracking.json()["events"]) == 1
+
+          forbidden = session.post(base + f"/gujarat/shipments/{shipment_id}/events", headers=headers, json={
+              "event_type": "CI_TEST",
+              "description": "A driver must not be allowed to add authority-only events.",
+              "data_status": "UNVERIFIED",
+          })
+          assert forbidden.status_code == 403, forbidden.text
+          print("Gujarat authenticated API smoke tests passed.")
+          PY
+      - name: Show API log on failure
+        if: failure()
+        run: cat /tmp/gujarat-api.log || true
