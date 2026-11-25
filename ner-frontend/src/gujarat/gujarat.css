@@ -31,3 +31,5 @@
 .gj-route-result strong{font-size:12px}.gj-route-result>span{font-size:18px;font-weight:800;color:#176f68}.gj-route-result small{font-size:10px;line-height:1.5;color:#74898b}
 .gj-form-error{color:#a43d3d}
 @media(max-width:620px){.gj-route-results{grid-template-columns:1fr}.gj-route-form-grid{grid-template-columns:1fr 1fr}}
+
+.gj-registry-group{margin:18px 0 22px}.gj-registry-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}.gj-registry-heading strong{font-size:13px}.gj-registry-heading span{font-size:10px;color:#829397}.gj-registry-empty{background:#fff;border:1px dashed var(--gj-line);border-radius:10px;padding:14px;color:#7b8e91;font-size:11px}
