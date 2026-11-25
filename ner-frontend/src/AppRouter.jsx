@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import App from './App.jsx';
 import { useAuth } from './context/AuthContext.jsx';
+import GujaratModule from './gujarat/GujaratModule.jsx';
 
 // Simple auth gate: renders the dashboard only if login()/register()
 // has actually set a token + role. Anyone hitting /app directly
@@ -12,6 +13,12 @@ function ProtectedApp() {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <App />;
+}
+
+function ProtectedGujarat() {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <GujaratModule />;
 }
 
 // Mirror image of ProtectedApp: the landing page and login form are
@@ -32,6 +39,7 @@ export default function AppRouter() {
         <Route path="/" element={<PublicOnly><LandingPage /></PublicOnly>} />
         <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
         <Route path="/app" element={<ProtectedApp />} />
+        <Route path="/gujarat/*" element={<ProtectedGujarat />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
