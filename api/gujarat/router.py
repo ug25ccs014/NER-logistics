@@ -193,8 +193,8 @@ def create_gujarat_shipment(body: ShipmentCreate, current: dict = Depends(curren
                     VALUES (%s,%s,'SHIPMENT_CREATED','Shipment created',%s,'UNVERIFIED')
                 """, (str(uuid.uuid4()), str(shipment_id), int(current["sub"])))
         return result
-    except Exception:
-        raise
+    finally:
+        conn.close()
 
 
 @router.get("/shipments/{shipment_id}/tracking")
