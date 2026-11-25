@@ -20,7 +20,7 @@ function StatusPill({ value = 'UNVERIFIED' }) {
   return <span className={`gj-status gj-status--${status.toLowerCase()}`}>{status}</span>;
 }
 
-function useGujaratData(path) {
+function useGujaratData(path, refreshKey = 0) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ function useGujaratData(path) {
       .catch((err) => { if (active) setError(err.message || 'Unable to load Gujarat data.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [path]);
+  }, [path, refreshKey]);
 
   return { data, error, loading };
 }
@@ -103,7 +103,8 @@ const SECTION_CONFIG = {
 
 function RecordsPage({ section }) {
   const config = SECTION_CONFIG[section];
-  const { data, error, loading } = useGujaratData(config.path);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { data, error, loading } = useGujaratData(config.path, refreshKey);
   const [form, setForm] = useState({ origin_label: 'Gandhinagar', destination_label: 'Ahmedabad', cargo_type: 'General', weight_kg: '100' });
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
@@ -115,8 +116,8 @@ function RecordsPage({ section }) {
     setNotice('');
     try {
       const created = await gujaratRequest('/shipments', { method: 'POST', body: JSON.stringify({ ...form, weight_kg: Number(form.weight_kg) }) });
-      setNotice(`Created ${created.public_reference}. You can open its tracking record from the shipment list.`);
-      window.location.reload();
+      setNotice(`Created ${created.public_reference}. The shipment list has been refreshed.`);
+      setRefreshKey((value) => value + 1);
     } catch (err) {
       setNotice(err.message || 'Shipment could not be created.');
     } finally {
