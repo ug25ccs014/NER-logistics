@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -50,6 +51,7 @@ export default function TopBar() {
         </div>
       </div>
       <div className="topbar-right">
+        <Link to="/gujarat" className="logout-link" style={{ textDecoration: "none" }}>Gujarat module ↗</Link>
         <label className="language-control app-language" title="Language">
           <span>文</span>
           <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">
