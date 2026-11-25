@@ -108,6 +108,15 @@ CREATE TABLE IF NOT EXISTS gujarat_waterway_terminals (
 CREATE INDEX IF NOT EXISTS idx_gujarat_terminals_location
     ON gujarat_waterway_terminals USING GIST (location);
 
+CREATE TABLE IF NOT EXISTS gujarat_waterway_connections (
+    id BIGSERIAL PRIMARY KEY,
+    segment_a_id BIGINT NOT NULL REFERENCES gujarat_waterway_segments(id) ON DELETE CASCADE,
+    segment_b_id BIGINT NOT NULL REFERENCES gujarat_waterway_segments(id) ON DELETE CASCADE,
+    junction_name VARCHAR(200),
+    CHECK (segment_a_id <> segment_b_id),
+    UNIQUE (segment_a_id, segment_b_id)
+);
+
 CREATE TABLE IF NOT EXISTS gujarat_vessels (
     id BIGSERIAL PRIMARY KEY,
     vessel_code VARCHAR(80) UNIQUE,
@@ -141,6 +150,33 @@ CREATE TABLE IF NOT EXISTS gujarat_vessel_schedules (
     source_url TEXT,
     last_verified_at TIMESTAMPTZ,
     CHECK (origin_terminal_id <> destination_terminal_id)
+);
+
+CREATE TABLE IF NOT EXISTS gujarat_waterway_cargo_posts (
+    id UUID PRIMARY KEY,
+    owner_account_id INTEGER REFERENCES accounts(id),
+    origin_terminal_id BIGINT NOT NULL REFERENCES gujarat_waterway_terminals(id),
+    destination_terminal_id BIGINT NOT NULL REFERENCES gujarat_waterway_terminals(id),
+    cargo_type VARCHAR(80) NOT NULL,
+    weight_kg NUMERIC(12,2) NOT NULL CHECK (weight_kg > 0),
+    volume_m3 NUMERIC(12,3),
+    required_departure TIMESTAMPTZ,
+    delivery_deadline TIMESTAMPTZ,
+    requirements JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(40) NOT NULL DEFAULT 'open',
+    data_status VARCHAR(20) NOT NULL DEFAULT 'UNVERIFIED'
+        CHECK (data_status IN ('VERIFIED','UNVERIFIED','DEMO','SIMULATED','UNAVAILABLE')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS gujarat_waterway_bookings (
+    id UUID PRIMARY KEY,
+    cargo_post_id UUID NOT NULL REFERENCES gujarat_waterway_cargo_posts(id) ON DELETE CASCADE,
+    vessel_schedule_id BIGINT NOT NULL REFERENCES gujarat_vessel_schedules(id),
+    booked_weight_kg NUMERIC(12,2) NOT NULL CHECK (booked_weight_kg > 0),
+    booking_status VARCHAR(40) NOT NULL DEFAULT 'requested',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gujarat_airports (
@@ -215,13 +251,42 @@ CREATE TABLE IF NOT EXISTS gujarat_shipments (
 CREATE INDEX IF NOT EXISTS idx_gujarat_shipments_owner_created
     ON gujarat_shipments (owner_account_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS gujarat_air_cargo_events (
+    id UUID PRIMARY KEY,
+    shipment_id UUID NOT NULL REFERENCES gujarat_shipments(id) ON DELETE CASCADE,
+    airport_id BIGINT REFERENCES gujarat_airports(id),
+    event_type VARCHAR(80) NOT NULL,
+    event_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    description TEXT,
+    source_name VARCHAR(200),
+    source_url TEXT,
+    data_status VARCHAR(20) NOT NULL DEFAULT 'UNVERIFIED'
+        CHECK (data_status IN ('VERIFIED','UNVERIFIED','DEMO','SIMULATED','UNAVAILABLE'))
+);
+
+CREATE TABLE IF NOT EXISTS gujarat_cold_chain_readings (
+    id BIGSERIAL PRIMARY KEY,
+    shipment_id UUID NOT NULL REFERENCES gujarat_shipments(id) ON DELETE CASCADE,
+    temperature_c NUMERIC(6,2) NOT NULL,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sensor_reference VARCHAR(120),
+    reading_status VARCHAR(40) NOT NULL DEFAULT 'UNVERIFIED',
+    data_status VARCHAR(20) NOT NULL DEFAULT 'UNVERIFIED'
+        CHECK (data_status IN ('VERIFIED','UNVERIFIED','DEMO','SIMULATED','UNAVAILABLE'))
+);
+CREATE INDEX IF NOT EXISTS idx_gujarat_cold_chain_shipment_time
+    ON gujarat_cold_chain_readings (shipment_id, observed_at DESC);
+
 CREATE TABLE IF NOT EXISTS gujarat_shipment_legs (
     id UUID PRIMARY KEY,
     shipment_id UUID NOT NULL REFERENCES gujarat_shipments(id) ON DELETE CASCADE,
     sequence_no INTEGER NOT NULL CHECK (sequence_no > 0),
     mode VARCHAR(10) NOT NULL CHECK (mode IN ('ROAD','WATER','AIR')),
     origin_label VARCHAR(200) NOT NULL,
+    origin_location GEOMETRY(POINT, 4326),
     destination_label VARCHAR(200) NOT NULL,
+    destination_location GEOMETRY(POINT, 4326),
+    provider_reference VARCHAR(160),
     planned_departure TIMESTAMPTZ,
     estimated_arrival TIMESTAMPTZ,
     actual_departure TIMESTAMPTZ,
