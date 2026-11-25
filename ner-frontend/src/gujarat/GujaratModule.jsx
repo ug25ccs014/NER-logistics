@@ -173,7 +173,7 @@ function RecordsPage({ section }) {
     <>
       <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / {section.toUpperCase()}</span><h1>{config.title}</h1><p>{config.subtitle}</p></div></div>
       {section === 'roadways' && <form className="gj-create-form" onSubmit={compareRoadRoutes}>
-        <div className="gj-form-heading"><strong>Compare Gujarat road routes</strong><span>Uses Gujarat-only segment IDs</span></div>
+        <div className="gj-form-heading"><strong>Compare Gujarat road routes</strong><span>Uses Gujarat-only segment IDs · estimated speeds, not live traffic</span></div>
         <div className="gj-form-grid gj-route-form-grid">
           <label>Start segment ID<input type="number" min="1" value={routeStart} onChange={e => setRouteStart(e.target.value)} required /></label>
           <label>End segment ID<input type="number" min="1" value={routeEnd} onChange={e => setRouteEnd(e.target.value)} required /></label>
