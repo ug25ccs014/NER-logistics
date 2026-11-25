@@ -17,7 +17,8 @@ const NAV_ITEMS = [
 
 function StatusPill({ value = 'UNVERIFIED' }) {
   const status = String(value).toUpperCase();
-  return <span className={`gj-status gj-status--${status.toLowerCase()}`}>{status}</span>;
+  const statusClass = status.toLowerCase().replaceAll(" ", "-");
+  return <span className={`gj-status gj-status--${statusClass}`}>{status}</span>;
 }
 
 function useGujaratData(path, refreshKey = 0) {
