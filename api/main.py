@@ -42,6 +42,7 @@ import ai_service
 import forecast_service
 import trip_forecast
 import live_risk
+from gujarat.router import router as gujarat_router
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -256,6 +257,9 @@ def get_optional_account(credentials: Optional[HTTPAuthorizationCredentials] = D
 
 
 app = FastAPI(title="NER Logistics Platform API")
+
+# Additive regional module; all existing NER endpoints remain unchanged.
+app.include_router(gujarat_router, prefix="/gujarat")
 
 # Allows the dashboard (opened as a local HTML file, or served from
 # any origin) to call this API from the browser without being blocked.
