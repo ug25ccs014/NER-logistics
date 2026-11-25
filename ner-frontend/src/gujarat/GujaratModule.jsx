@@ -108,7 +108,27 @@ function RecordsPage({ section }) {
   const [form, setForm] = useState({ origin_label: 'Gandhinagar', destination_label: 'Ahmedabad', cargo_type: 'General', weight_kg: '100' });
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [routeStart, setRouteStart] = useState('');
+  const [routeEnd, setRouteEnd] = useState('');
+  const [routeResult, setRouteResult] = useState(null);
+  const [routeError, setRouteError] = useState('');
+  const [routeLoading, setRouteLoading] = useState(false);
   const isShipments = section === 'shipments';
+
+  async function compareRoadRoutes(event) {
+    event.preventDefault();
+    setRouteLoading(true);
+    setRouteError('');
+    setRouteResult(null);
+    try {
+      const query = `?start=${encodeURIComponent(routeStart)}&end=${encodeURIComponent(routeEnd)}`;
+      setRouteResult(await gujaratRequest(`/roadways/route${query}`));
+    } catch (err) {
+      setRouteError(err.message || 'Route comparison failed.');
+    } finally {
+      setRouteLoading(false);
+    }
+  }
 
   async function createShipment(event) {
     event.preventDefault();
@@ -128,6 +148,21 @@ function RecordsPage({ section }) {
   return (
     <>
       <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / {section.toUpperCase()}</span><h1>{config.title}</h1><p>{config.subtitle}</p></div></div>
+      {section === 'roadways' && <form className="gj-create-form" onSubmit={compareRoadRoutes}>
+        <div className="gj-form-heading"><strong>Compare Gujarat road routes</strong><span>Uses Gujarat-only segment IDs</span></div>
+        <div className="gj-form-grid gj-route-form-grid">
+          <label>Start segment ID<input type="number" min="1" value={routeStart} onChange={e => setRouteStart(e.target.value)} required /></label>
+          <label>End segment ID<input type="number" min="1" value={routeEnd} onChange={e => setRouteEnd(e.target.value)} required /></label>
+        </div>
+        <button className="gj-primary-button" disabled={routeLoading}>{routeLoading ? 'Comparing…' : 'Compare fastest and safest'}</button>
+        {routeError && <p className="gj-form-notice gj-form-error">{routeError}</p>}
+        {routeResult && <div className="gj-route-results">
+          {['fastest','safest'].map(mode => {
+            const route = routeResult[mode];
+            return <article className="gj-route-result" key={mode}><strong>{mode === 'fastest' ? 'Fastest route' : 'Safest route'}</strong>{route ? <><span>{route.total_time_min} estimated minutes</span><small>{route.segments.map(segment => segment.name).join(' → ')}</small><StatusPill value={route.data_status} /></> : <small>No feasible route in this mode.</small>}</article>;
+          })}
+        </div>}
+      </form>}
       {isShipments && <form className="gj-create-form" onSubmit={createShipment}>
         <div className="gj-form-heading"><strong>Create a shipment</strong><span>Uses your existing NER account</span></div>
         <div className="gj-form-grid">
@@ -150,7 +185,14 @@ function RecordsPage({ section }) {
 }
 
 function MultimodalPage() {
-  return <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / MULTIMODAL</span><h1>Multimodal planner</h1><p>Compare road, water and air legs for a single shipment.</p></div><StatusPill value="UNAVAILABLE" /></div>;
+  const { data, error, loading } = useGujaratData('/multimodal/status');
+  return <>
+    <div className="gj-page-heading"><div><span className="gj-eyebrow">GUJARAT / MULTIMODAL</span><h1>Multimodal planner</h1><p>Compare road, water and air legs for a single shipment.</p></div><StatusPill value={data?.optimizer_status || 'UNAVAILABLE'} /></div>
+    {loading && <LoadingState />}
+    {error && <ErrorState message={error} />}
+    {data && <section className="gj-notice"><strong>Why optimization is not enabled yet</strong><p>{data.reason}</p></section>}
+    {data?.readiness && <div className="gj-metric-grid">{Object.entries(data.readiness).map(([label, value]) => <article className="gj-metric" key={label}><span>{label.replaceAll('_',' ')}</span><strong>{value}</strong><small>Verified operational records</small></article>)}</div>}
+  </>;
 }
 
 function TrackingPage() {
