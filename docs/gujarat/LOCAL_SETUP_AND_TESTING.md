@@ -76,6 +76,32 @@ ORDER BY table_name;
 
 The migration is wrapped in a transaction. If it fails, PostgreSQL rolls back the migration transaction; capture the error and stop. Do not try to fix it by dropping existing NER tables.
 
+## 3A. Add the sourced reference records (optional)
+
+After migration 005, you may load the small, sourced reference dataset:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f DB/seed_gujarat_reference_data.sql
+```
+
+This records the Ahmedabad airport reference point and cargo-terminal label from AAI's eAIP, plus the Sabarmati NW-87 registry reference from IWAI. Sabarmati is explicitly marked `STUDY_REFERENCE_ONLY` / `UNVERIFIED`; no vessel, terminal, navigability, cargo service or schedule is fabricated. See `docs/gujarat/REFERENCE_DATA_AND_PROVENANCE.md`.
+
+## 3B. Import Gujarat road geometry (optional; requires internet)
+
+Only after migration 005, you may run the Gujarat-specific OpenStreetMap importer:
+
+```bash
+cd osm_imports
+python -m pip install -r requirements.txt
+python import_gujarat_roads.py
+```
+
+This queries a bounded pilot area around Gandhinagar and Ahmedabad. It writes only to `gujarat_road_segments` and `gujarat_segment_connections`; it does not write to NER's `road_segments` or `segment_connections`.
+
+Imported OSM rows are labelled `UNVERIFIED`, and their road status is `unknown`. Travel times use disclosed road-class speed assumptions, not measured or live traffic. The importer uses the public Overpass API; if that shared service is unavailable or rate-limited, stop and retry later rather than repeatedly sending the same query. OpenStreetMap attribution is required: © OpenStreetMap contributors, ODbL.
+
+The route comparison form uses Gujarat segment IDs displayed in the Roadways list. It compares fastest and risk-aware routes on the isolated Gujarat graph only.
+
 ## 4. Start the backend locally
 
 Use the Python environment you normally use for this repository. From the repository root:
