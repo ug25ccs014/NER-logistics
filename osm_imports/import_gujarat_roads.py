@@ -12,6 +12,14 @@ import psycopg2
 import config
 from overpass_client import fetch_road_network, parse_ways_and_nodes
 
+# Transparent planning assumptions for the Gujarat pilot; these are not
+# measured traffic speeds. All imported segments remain UNVERIFIED.
+GJ_SPEED_KMH = {
+    "motorway": 80, "trunk": 65, "primary": 50, "secondary": 40,
+    "tertiary": 30, "unclassified": 25, "residential": 20,
+    "service": 15, "track": 12,
+}
+
 REGION_LABEL = "Gandhinagar–Ahmedabad Gujarat pilot area"
 # (min_lat, min_lon, max_lat, max_lon). Includes both pilot cities and
 # adjacent connecting roads; it is a bounding area, not an asserted route.
@@ -66,7 +74,7 @@ def import_gujarat_roads():
                     coords = way["coords"]
                     length_km = way_length_km(coords)
                     road_class = way.get("highway_type", "unclassified")
-                    speed_kmh = config.SPEED_BY_ROAD_CLASS_KMH.get(road_class, 20)
+                    speed_kmh = GJ_SPEED_KMH.get(road_class, 20)
                     estimated_minutes = round((length_km / speed_kmh) * 60, 1) if speed_kmh > 0 else None
                     raw_name = (way.get("name") or "").strip()
                     name = raw_name if raw_name and not raw_name.lower().startswith("unnamed road") else "Unnamed Road"
