@@ -88,6 +88,25 @@ async function getRoutes(origin, destination) {
     source: 'OSRM / OpenStreetMap',
   })).sort((a, b) => a.durationMin - b.durationMin);
 }
+
+function weatherRiskColor(score) {
+  if (score >= 75) return '#dc3f3f';
+  if (score >= 55) return '#ed7d24';
+  if (score >= 30) return '#e2b52e';
+  return '#20a36b';
+}
+function buildWeatherSections(route, points) {
+  if (!route?.coords?.length || !points?.length) return [];
+  const ordered = [...points].filter(p => Number.isFinite(Number(p.index))).sort((a, b) => Number(a.index) - Number(b.index));
+  return ordered.slice(0, -1).map((point, i) => {
+    const next = ordered[i + 1];
+    const from = Math.max(0, Math.min(route.coords.length - 1, Number(point.index)));
+    const to = Math.max(from + 1, Math.min(route.coords.length - 1, Number(next.index)));
+    const score = Math.max(Number(point.weather_score ?? point.risk_score ?? 0), Number(next.weather_score ?? next.risk_score ?? 0));
+    return { id: String(i), coords: route.coords.slice(from, to + 1), score, color: weatherRiskColor(score) };
+  }).filter(section => section.coords.length > 1);
+}
+
 function loadSaved() {
   try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); } catch { return []; }
 }
@@ -195,7 +214,7 @@ export default function RouteRidePage() {
           })),
         });
         const scored = (forecast.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
-        setWeather({ ...forecast, scored, routeId: route.id, checkedAt: new Date().toISOString() });
+        setWeather({ ...forecast, scored, mapSections: buildWeatherSections(route, scored), routeId: route.id, checkedAt: new Date().toISOString() });
         setWeatherNotice(scored.length ? 'Route weather forecast ready. Weather-provider coverage may vary.' : 'The weather providers returned no usable forecast for these route points.');
       } catch (weatherError) {
         setWeatherNotice('Weather forecast unavailable: ' + (weatherError.message || 'provider error') + '. Your road route is still available.');
@@ -240,21 +259,6 @@ export default function RouteRidePage() {
       </div>
     </div>
     <div className="gj-route-layout">
-      <section className="gj-route-map-card">
-        <div className="gj-map-heading"><div><strong>Regional road map</strong><small>{region.label}</small></div><span>© OpenStreetMap contributors</span></div>
-        <MapContainer center={region.center} zoom={region.zoom} scrollWheelZoom className="gj-live-map">
-          <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <RecenterMap center={mapCenter} zoom={gps ? 14 : region.zoom} />
-          <Circle center={region.center} radius={region.radius} pathOptions={{ color: '#167f78', fillColor: '#167f78', fillOpacity: 0.06, weight: 2, dashArray: '6 6' }} />
-          {gps && <Marker position={[gps.lat, gps.lon]} icon={userIcon}><Popup><strong>Your device location</strong><br/>Accuracy ±{Math.round(gps.accuracy)} m</Popup></Marker>}
-          {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
-          {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
-          {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
-          {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
-          {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
-        </MapContainer>
-        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Selected route: teal</span></div>
-      </section>
       <aside className="gj-route-side">
         <form className="gj-route-search-card" onSubmit={findRoutes}>
           <span className="gj-card-kicker">PLAN A JOURNEY</span><h2>Where do you want to go?</h2>
@@ -327,7 +331,7 @@ export default function RouteRidePage() {
               if (indices[indices.length - 1] !== route.coords.length - 1) indices.push(route.coords.length - 1);
               const result = await api.forecastPoints({ depart_at: new Date().toISOString(), chunk_minutes: Math.max(5, Math.ceil(route.durationMin / indices.length)), points: indices.slice(0,25).map((idx,index) => ({lat:route.coords[idx][0],lon:route.coords[idx][1],offset_min:route.durationMin*index/Math.max(1,indices.length-1),index})) });
               const scored = (result.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
-              setWeather({...result,scored,routeId:route.id,checkedAt:new Date().toISOString()});
+              setWeather({...result,scored,mapSections:buildWeatherSections(route,scored),routeId:route.id,checkedAt:new Date().toISOString()});
               setWeatherNotice(scored.length ? 'Weather refreshed.' : 'No usable forecast values returned.');
             } catch (e) { setWeatherNotice('Weather refresh failed: ' + e.message); }
             finally { setWeatherBusy(false); }
@@ -345,20 +349,12 @@ export default function RouteRidePage() {
             <div>Blocked segments matched: <b>{roadIntelligence.blocked_segments_matched}</b></div>
             <div>Stored risk coverage: <b>{roadIntelligence.risk_coverage}</b></div>
             <div>Field-hazard coverage: <b>{roadIntelligence.hazard_coverage}</b></div>
-            {roadIntelligence.segments?.length > 0 && <div style={{marginTop:9}}>
-              <b>Matched road sections</b>
-              {roadIntelligence.segments.slice(0,8).map(segment => <div key={segment.segment_id} style={{padding:'7px 0',borderTop:'1px solid rgba(150,160,170,.25)'}}>
-                <div><b>{segment.name || 'Unnamed Gujarat road'}</b>{segment.corridor ? ' · ' + segment.corridor : ''}</div>
-                <div>{segment.status || 'Status unavailable'} · {segment.data_status || 'Data status unavailable'} · {segment.distance_m ?? '—'} m from route</div>
-                <div>Stored risk: {segment.risk_score == null ? 'Not available' : segment.risk_score.toFixed(1) + '/100 (' + (segment.risk_level || 'unclassified') + ')'}</div>
-              </div>)}
-            </div>}
             <p style={{fontSize:11,color:'#9aa4af'}}>{roadIntelligence.note}</p>
           </div>}
 <strong>Route intelligence</strong>
           <div><span>Fastest route</span><b>{routes.length ? Math.round(routes[0].durationMin) + ' min estimate' : 'Awaiting search'}</b></div>
           <div><span>Safest route</span><b>Requires Gujarat risk data</b></div>
-          <div><span>Weather along route</span><b>MET Norway integration pending</b></div>
+          <div><span>Weather along route</span><b>{weather?.scored?.length ? "Forecast available" : "Awaiting forecast"}</b></div>
           <div><span>GPS tracking</span><b>{gps ? 'Active' : 'Not started'}</b></div>
           <div><span>Live traffic</span><b>Not available from current route source</b></div>
         </section>
@@ -370,7 +366,23 @@ export default function RouteRidePage() {
           </div>)}
         </section>}
       </aside>
+            <section className="gj-route-map-card">
+        <div className="gj-map-heading"><div><strong>Regional road map</strong><small>{region.label}</small></div><span>© OpenStreetMap contributors</span></div>
+        <MapContainer center={region.center} zoom={region.zoom} scrollWheelZoom className="gj-live-map">
+          <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <RecenterMap center={mapCenter} zoom={gps ? 14 : region.zoom} />
+          <Circle center={region.center} radius={region.radius} pathOptions={{ color: '#167f78', fillColor: '#167f78', fillOpacity: 0.06, weight: 2, dashArray: '6 6' }} />
+          {gps && <Marker position={[gps.lat, gps.lon]} icon={userIcon}><Popup><strong>Your device location</strong><br/>Accuracy ±{Math.round(gps.accuracy)} m</Popup></Marker>}
+          {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
+          {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
+          {weather?.routeId === selectedRoute?.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
+          {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
+          {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
+          {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
+        </MapContainer>
+        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Selected route: teal</span></div>
+      </section>
     </div>
-    <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. NetworkX safety ranking and MET Norway route forecasting are separate integration steps.</p>
+    <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. Route colours show weather-only forecast risk where forecast data is available; they do not represent a complete road-safety score.</p>
   </div>;
 }
