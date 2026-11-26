@@ -210,7 +210,7 @@ export default function RouteRidePage() {
           points: indices.slice(0, 25).map((idx, index) => ({
             lat: route.coords[idx][0], lon: route.coords[idx][1],
             offset_min: route.durationMin * index / Math.max(1, indices.length - 1),
-            index,
+            index: idx,
           })),
         });
         const scored = (forecast.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
@@ -307,16 +307,7 @@ export default function RouteRidePage() {
                 <div>Forecast cache age: <b>{age} min</b></div>
                 {rainEstimated && <div style={{color:'#c69b57'}}>Rain probability is estimated because a provider did not supply it.</div>}
               </div>
-              
-              <div className="gj-weather-section-list">
-                <strong>Weather along route</strong>
-                {weather.scored.map((point, index) => <div className="gj-weather-section" key={point.index ?? index}>
-                  <div><b>Route point {Number(point.index ?? index) + 1}</b><span>{point.risk_level || 'Forecast available'}</span></div>
-                  <p>Weather risk: {Number(point.weather_score ?? 0).toFixed(0)}/100 · Rain: {Number(point.forecast_rain_1h_mm || 0).toFixed(1)} mm/h · Wind: {Number(point.forecast_wind_kmh || 0).toFixed(0)} km/h</p>
-                  <small>{point.forecast_arrival ? 'Estimated arrival: ' + new Date(point.forecast_arrival).toLocaleString() : 'Arrival time unavailable'}</small>
-                </div>)}
-              </div>
-<p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
+              <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
               <p style={{fontSize:11,color:'#9aa4af'}}>Forecasts are estimates from external providers and can differ from actual local conditions.</p>
             </div>;
           })()}
@@ -329,7 +320,7 @@ export default function RouteRidePage() {
               const indices = [];
               for (let i = 0; i < route.coords.length; i += step) indices.push(i);
               if (indices[indices.length - 1] !== route.coords.length - 1) indices.push(route.coords.length - 1);
-              const result = await api.forecastPoints({ depart_at: new Date().toISOString(), chunk_minutes: Math.max(5, Math.ceil(route.durationMin / indices.length)), points: indices.slice(0,25).map((idx,index) => ({lat:route.coords[idx][0],lon:route.coords[idx][1],offset_min:route.durationMin*index/Math.max(1,indices.length-1),index})) });
+              const result = await api.forecastPoints({ depart_at: new Date().toISOString(), chunk_minutes: Math.max(5, Math.ceil(route.durationMin / indices.length)), points: indices.slice(0,25).map((idx,index) => ({lat:route.coords[idx][0],lon:route.coords[idx][1],offset_min:route.durationMin*index/Math.max(1,indices.length-1),index:idx})) });
               const scored = (result.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
               setWeather({...result,scored,mapSections:buildWeatherSections(route,scored),routeId:route.id,checkedAt:new Date().toISOString()});
               setWeatherNotice(scored.length ? 'Weather refreshed.' : 'No usable forecast values returned.');
@@ -353,10 +344,10 @@ export default function RouteRidePage() {
           </div>}
 <strong>Route intelligence</strong>
           <div><span>Fastest route</span><b>{routes.length ? Math.round(routes[0].durationMin) + ' min estimate' : 'Awaiting search'}</b></div>
-          <div><span>Safest route</span><b>Requires Gujarat risk data</b></div>
+          <div><span>Road-safety ranking</span><b>Not yet available</b></div>
           <div><span>Weather along route</span><b>{weather?.scored?.length ? "Forecast available" : "Awaiting forecast"}</b></div>
           <div><span>GPS tracking</span><b>{gps ? 'Active' : 'Not started'}</b></div>
-          <div><span>Live traffic</span><b>Not available from current route source</b></div>
+          <div><span>Traffic data</span><b>Estimated route time only</b></div>
         </section>
         {savedTrips.length > 0 && <section className="gj-route-info-card">
           <strong>Saved trips on this device</strong>
@@ -375,12 +366,12 @@ export default function RouteRidePage() {
           {gps && <Marker position={[gps.lat, gps.lon]} icon={userIcon}><Popup><strong>Your device location</strong><br/>Accuracy ±{Math.round(gps.accuracy)} m</Popup></Marker>}
           {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
           {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
-          {weather?.routeId === selectedRoute?.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
           {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
+          {weather?.routeId === selectedRoute?.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
           {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
           {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
-        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Selected route: teal</span></div>
+        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Weather risk: <i style={{background:"#20a36b"}}></i> Low · <i style={{background:"#e2b52e"}}></i> Moderate · <i style={{background:"#ed7d24"}}></i> High · <i style={{background:"#dc3f3f"}}></i> Severe</span></div>
       </section>
     </div>
     <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. Route colours show weather-only forecast risk where forecast data is available; they do not represent a complete road-safety score.</p>
