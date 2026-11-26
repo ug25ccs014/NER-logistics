@@ -205,7 +205,7 @@ def create_field_report(lat, lon, report_type, description, reporter_name, repor
 
             if corroborating_ids:
                 cur.execute(
-                    "UPDATE field_reports SET corroborated_by = corroborated_by + 1 WHERE id = ANY(%s);",
+                    "UPDATE field_reports SET corroborated_by = corroborated_by + 1 WHERE id = ANY(%s::uuid[]);",
                     (corroborating_ids,),
                 )
 
