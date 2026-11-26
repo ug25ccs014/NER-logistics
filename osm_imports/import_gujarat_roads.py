@@ -110,64 +110,118 @@ def load_road_ways(pbf_path, region):
 
 
 def import_region(conn, region, pbf_path):
+    from psycopg2.extras import execute_values
+
     ways = load_road_ways(pbf_path, region)
     if not ways:
         raise RuntimeError(f"{region['label']}: OSM returned no usable roads; this region was not changed.")
 
     pairs = find_connections(ways)
     way_to_segment = {}
-    with conn:
-        with conn.cursor() as cur:
-            for index, way in enumerate(ways):
-                coords = way["coords"]
-                length_km = way_length_km(coords)
-                road_class = way.get("highway_type", "unclassified")
-                speed_kmh = GJ_SPEED_KMH.get(road_class, 20)
-                estimated_minutes = round((length_km / speed_kmh) * 60, 1) if speed_kmh > 0 else None
-                raw_name = (way.get("name") or "").strip()
-                name = raw_name if raw_name and not raw_name.lower().startswith("unnamed road") else "Unnamed Road"
-                external_ref = f"osm:way:{way['osm_id']}"
-                source_url = f"https://www.openstreetmap.org/way/{way['osm_id']}"
-                cur.execute("""
-                    INSERT INTO gujarat_road_segments
-                        (external_ref, name, corridor, geom, length_km, road_type,
-                         normal_travel_min, status, data_status, source_name, source_url)
-                    VALUES
-                        (%s, %s, %s, ST_GeomFromText(%s, 4326), %s, %s,
-                         %s, 'unknown', 'UNVERIFIED', 'OpenStreetMap contributors (ODbL)', %s)
-                    ON CONFLICT (external_ref) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        corridor = EXCLUDED.corridor,
-                        geom = EXCLUDED.geom,
-                        length_km = EXCLUDED.length_km,
-                        road_type = EXCLUDED.road_type,
-                        normal_travel_min = EXCLUDED.normal_travel_min,
-                        status = 'unknown',
-                        data_status = 'UNVERIFIED',
-                        source_name = EXCLUDED.source_name,
-                        source_url = EXCLUDED.source_url,
-                        updated_at = now()
-                    RETURNING id
-                """, (
-                    external_ref, name, region["label"], coords_to_wkt(coords),
-                    round(length_km, 3), road_class, estimated_minutes, source_url,
-                ))
-                way_to_segment[index] = cur.fetchone()[0]
+    batch_size = 500
+    total = len(ways)
 
-            segment_ids = list(way_to_segment.values())
+    insert_sql = """
+        INSERT INTO gujarat_road_segments
+            (external_ref, name, corridor, geom, length_km, road_type,
+             normal_travel_min, status, data_status, source_name, source_url)
+        VALUES %s
+        ON CONFLICT (external_ref) DO UPDATE SET
+            name = EXCLUDED.name,
+            corridor = EXCLUDED.corridor,
+            geom = EXCLUDED.geom,
+            length_km = EXCLUDED.length_km,
+            road_type = EXCLUDED.road_type,
+            normal_travel_min = EXCLUDED.normal_travel_min,
+            status = 'unknown',
+            data_status = 'UNVERIFIED',
+            source_name = EXCLUDED.source_name,
+            source_url = EXCLUDED.source_url,
+            updated_at = now()
+        RETURNING id, external_ref
+    """
+    value_template = """(
+        %s, %s, %s, ST_GeomFromText(%s, 4326), %s, %s, %s,
+        'unknown', 'UNVERIFIED', 'OpenStreetMap contributors (ODbL)', %s
+    )"""
+
+    print(f"[{region['label']}] Preparing {total} roads for batched database import...", flush=True)
+    for offset in range(0, total, batch_size):
+        batch = ways[offset:offset + batch_size]
+        values = []
+        for way in batch:
+            coords = way["coords"]
+            length_km = way_length_km(coords)
+            road_class = way.get("highway_type", "unclassified")
+            speed_kmh = GJ_SPEED_KMH.get(road_class, 20)
+            estimated_minutes = round((length_km / speed_kmh) * 60, 1) if speed_kmh > 0 else None
+            raw_name = (way.get("name") or "").strip()
+            name = raw_name if raw_name and not raw_name.lower().startswith("unnamed road") else "Unnamed Road"
+            external_ref = f"osm:way:{way['osm_id']}"
+            source_url = f"https://www.openstreetmap.org/way/{way['osm_id']}"
+            values.append((
+                external_ref, name, region["label"], coords_to_wkt(coords),
+                round(length_km, 3), road_class, estimated_minutes, source_url,
+            ))
+
+        try:
+            with conn.cursor() as cur:
+                returned = execute_values(
+                    cur, insert_sql, values, template=value_template,
+                    page_size=batch_size, fetch=True,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        for segment_id, external_ref in returned:
+            way_to_segment[external_ref] = segment_id
+
+        done = min(offset + len(batch), total)
+        print(f"[{region['label']}] Database import: {done}/{total} roads committed.", flush=True)
+
+    segment_ids = list(way_to_segment.values())
+    print(f"[{region['label']}] Rebuilding connections for {len(segment_ids)} imported roads...", flush=True)
+    try:
+        with conn.cursor() as cur:
             cur.execute("""
                 DELETE FROM gujarat_segment_connections
                 WHERE segment_a_id = ANY(%s) OR segment_b_id = ANY(%s)
             """, (segment_ids, segment_ids))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
-            for a, b in pairs:
-                id_a, id_b = sorted((way_to_segment[a], way_to_segment[b]))
-                cur.execute("""
-                    INSERT INTO gujarat_segment_connections
-                        (segment_a_id, segment_b_id, junction_name)
-                    VALUES (%s, %s, NULL)
-                    ON CONFLICT (segment_a_id, segment_b_id) DO NOTHING
-                """, (id_a, id_b))
+    connection_rows = []
+    for a, b in pairs:
+        id_a, id_b = sorted((way_to_segment[f"osm:way:{ways[a]['osm_id']}"],
+                             way_to_segment[f"osm:way:{ways[b]['osm_id']}"]))
+        connection_rows.append((id_a, id_b, None))
+
+    for offset in range(0, len(connection_rows), 5000):
+        batch = connection_rows[offset:offset + 5000]
+        try:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """INSERT INTO gujarat_segment_connections
+                       (segment_a_id, segment_b_id, junction_name)
+                       VALUES %s
+                       ON CONFLICT (segment_a_id, segment_b_id) DO NOTHING""",
+                    batch,
+                    page_size=5000,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        print(
+            f"[{region['label']}] Connections inserted: "
+            f"{min(offset + len(batch), len(connection_rows))}/{len(connection_rows)}.",
+            flush=True,
+        )
 
     print(f"{region['key']}: imported/updated {len(ways)} road ways and {len(pairs)} connections.")
     print("All imported rows remain status=unknown and data_status=UNVERIFIED.")
