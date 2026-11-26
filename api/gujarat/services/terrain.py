@@ -5,6 +5,55 @@ condition/safety score. It operates only on caller-supplied Gujarat route points
 """
 import math
 import requests
+import copy
+import hashlib
+import json
+import threading
+import time
+from collections import OrderedDict
+
+# Per-process cache: 24-hour TTL, bounded to avoid unbounded memory growth.
+_CACHE_TTL_SECONDS = 24 * 60 * 60
+_CACHE_MAX_ENTRIES = 128
+_PROFILE_CACHE = OrderedDict()
+_PROFILE_CACHE_LOCK = threading.Lock()
+
+
+def _profile_cache_key(points):
+    canonical = [
+        [round(float(point["lat"]), 5), round(float(point["lon"]), 5)]
+        for point in points
+    ]
+    payload = json.dumps(canonical, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def get_cached_terrain_profile(points):
+    """Return a cached route profile or calculate and cache a new one."""
+    key = _profile_cache_key(points)
+    now = time.time()
+    with _PROFILE_CACHE_LOCK:
+        entry = _PROFILE_CACHE.get(key)
+        if entry and now - entry["cached_at"] < _CACHE_TTL_SECONDS:
+            _PROFILE_CACHE.move_to_end(key)
+            result = copy.deepcopy(entry["profile"])
+            result["cache_hit"] = True
+            result["cache_age_seconds"] = max(0, int(now - entry["cached_at"]))
+            return result
+        if entry:
+            del _PROFILE_CACHE[key]
+
+    profile = build_terrain_profile(points)
+    with _PROFILE_CACHE_LOCK:
+        _PROFILE_CACHE[key] = {"profile": copy.deepcopy(profile), "cached_at": now}
+        _PROFILE_CACHE.move_to_end(key)
+        while len(_PROFILE_CACHE) > _CACHE_MAX_ENTRIES:
+            _PROFILE_CACHE.popitem(last=False)
+
+    result = copy.deepcopy(profile)
+    result["cache_hit"] = False
+    result["cache_age_seconds"] = 0
+    return result
 
 ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 MAX_POINTS = 80
