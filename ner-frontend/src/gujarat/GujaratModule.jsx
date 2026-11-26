@@ -3,9 +3,11 @@ import { Link, NavLink, Route, Routes, Navigate, useNavigate } from 'react-route
 import { useAuth } from '../context/AuthContext.jsx';
 import { gujaratRequest } from './gujaratApi.js';
 import './gujarat.css';
+import RouteRidePage from './RouteRidePage.jsx';
 
 const NAV_ITEMS = [
   { to: '/gujarat', label: 'Overview', end: true, icon: '⌂' },
+  { to: '/gujarat/route-ride', label: 'Route & Ride', icon: '⌖' },
   { to: '/gujarat/roadways', label: 'Roadways', icon: '⇢' },
   { to: '/gujarat/waterways', label: 'Waterways', icon: '≈' },
   { to: '/gujarat/airways', label: 'Airways', icon: '✈' },
@@ -292,6 +294,7 @@ export default function GujaratModule() {
         <header className="gj-topbar"><div><span>NER LOGISTICS</span><b>/</b><strong>GUJARAT MODULE</strong></div><StatusPill value="REGIONAL PILOT" /></header>
         <div className="gj-content"><Routes>
           <Route index element={<OverviewPage />} />
+          <Route path="route-ride" element={<RouteRidePage />} />
           <Route path="roadways" element={<RecordsPage section="roadways" />} />
           <Route path="waterways" element={<WaterwaysPage />} />
           <Route path="airways" element={<AirwaysPage />} />
