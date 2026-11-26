@@ -181,9 +181,11 @@ export default function RouteRidePage() {
         if (cancelled) return;
         setRoadIntelligence(result);
         setRoadIntelligenceNotice(
-          result.unique_segments_matched
-            ? 'Gujarat road inventory matched to this route.'
-            : 'No Gujarat road segments were matched within 300 m of the sampled route points.'
+          result.total_inventory_segments === 0
+            ? 'No Gujarat road-segment inventory is loaded yet. Real monitored-road risk cannot be calculated.'
+            : result.unique_segments_matched
+              ? 'Gujarat road inventory matched to this route.'
+              : 'Road inventory exists, but no segment was found within 300 m of the sampled route points.'
         );
       })
       .catch(error => {
@@ -375,15 +377,23 @@ export default function RouteRidePage() {
           
           <strong>Gujarat monitored-road coverage</strong>
           <p style={{fontSize:12,color:'#9aa4af'}}>{roadIntelligenceBusy ? 'Checking Gujarat road inventory…' : roadIntelligenceNotice}</p>
-          {roadIntelligence && <div className="gj-coverage-metrics" style={{fontSize:12,lineHeight:1.8}}>
-            <div><span>Route sample points matched</span><b>{roadIntelligence.points_matched}/{roadIntelligence.points_checked}</b></div>
-            <div><span>Unique Gujarat segments</span><b>{roadIntelligence.unique_segments_matched}</b></div>
-            <div><span>Segments with stored risk scores</span><b>{roadIntelligence.segments_with_risk_scores}</b></div>
-            <div><span>Verified road segments</span><b>{roadIntelligence.verified_segments_matched}</b></div>
-            <div><span>Blocked segments matched</span><b>{roadIntelligence.blocked_segments_matched}</b></div>
-            <div><span>Stored risk coverage</span><b>{roadIntelligence.risk_coverage}</b></div>
-            <div><span>Field-hazard coverage</span><b>{roadIntelligence.hazard_coverage}</b></div>
-            <p style={{fontSize:11,color:'#9aa4af'}}>{roadIntelligence.note}</p>
+          {roadIntelligence && <div className="gj-coverage-status">
+            <div className="gj-coverage-status-main">
+              <span>Gujarat road segments in database</span>
+              <b>{Number(roadIntelligence.total_inventory_segments || 0).toLocaleString('en-IN')}</b>
+            </div>
+            {roadIntelligence.total_inventory_segments > 0 && <div className="gj-coverage-grid">
+              <div><span>Route sample points matched</span><b>{roadIntelligence.points_matched}/{roadIntelligence.points_checked}</b></div>
+              <div><span>Unique segments matched</span><b>{roadIntelligence.unique_segments_matched}</b></div>
+              <div><span>Matched segments with risk scores</span><b>{roadIntelligence.segments_with_risk_scores}</b></div>
+              <div><span>Verified matched segments</span><b>{roadIntelligence.verified_segments_matched}</b></div>
+              <div><span>Blocked segments matched</span><b>{roadIntelligence.blocked_segments_matched}</b></div>
+              <div><span>Stored risk coverage</span><b>{roadIntelligence.risk_coverage}</b></div>
+              <div><span>Field-hazard coverage</span><b>{roadIntelligence.hazard_coverage}</b></div>
+            </div>}
+            <p className="gj-coverage-explanation">{roadIntelligence.total_inventory_segments === 0
+              ? 'The road inventory has not been imported into the Gujarat database. The map route is provided by OSRM and is separate from the monitored-road database. No road-safety score or coloured road-risk classification is available yet.'
+              : roadIntelligence.note}</p>
           </div>}
 <strong>Route intelligence</strong>
           <div><span>Fastest route</span><b>{routes.length ? Math.round(routes[0].durationMin) + ' min estimate' : 'Awaiting search'}</b></div>
