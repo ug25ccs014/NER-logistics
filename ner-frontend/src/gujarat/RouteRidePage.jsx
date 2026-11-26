@@ -237,7 +237,8 @@ export default function RouteRidePage() {
         {routes.length > 0 && <section className="gj-route-info-card">
           <strong>Weather & route risk</strong>
           <p style={{fontSize:12,color:'#9aa4af'}}>{weatherBusy ? 'Fetching weather along the route…' : weatherNotice}</p>
-          {weather?.scored?.length > 0 && (() => {
+          {weather?.routeId !== selectedRoute?.id && selectedRoute && <p style={{fontSize:12,color:'#c69b57'}}>Weather shown for another alternative. Refresh to check the selected route.</p>}
+          {weather?.routeId === selectedRoute?.id && weather?.scored?.length > 0 && (() => {
             const worst = weather.scored.reduce((a, b) => b.risk_score > a.risk_score ? b : a);
             const rain = Math.max(...weather.scored.map(p => Number(p.forecast_rain_1h_mm || 0)));
             const wind = Math.max(...weather.scored.map(p => Number(p.forecast_wind_kmh || 0)));
