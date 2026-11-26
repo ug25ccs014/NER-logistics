@@ -328,7 +328,7 @@ export default function RouteRidePage() {
             const agreements = [...new Set(weather.scored.map(p => p.source_agreement || 'unknown'))];
             const confidence = agreements.includes('low') ? 'Sources disagree' : agreements.includes('single_source') ? 'Single source only' : agreements.includes('medium') ? 'Partial agreement' : 'Sources broadly agree';
             const rainEstimated = weather.scored.some(p => p.rain_probability_estimated);
-            return <div style={{marginTop:10}}>
+            return <div className="gj-weather-content" style={{marginTop:10}}>
               <div style={{fontSize:18,fontWeight:700,color:tone}}>{level} weather-risk estimate · {score.toFixed(0)}/100</div>
               <div className="gj-weather-metrics">
                 <div>Peak forecast rain: <b>{rain.toFixed(1)} mm/h</b></div>
