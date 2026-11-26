@@ -231,12 +231,10 @@ def compute_forecast_segments(depart_at_utc: datetime, segment_ids: list, journe
 
 
 def compute_point_forecast(depart_at_utc: datetime, points: list, chunk_minutes: int = 5) -> dict:
-    """Live risk for arbitrary points (stretches of road that are not in the monitored network).
+    """Weather-led forecast for arbitrary route points outside the monitored network.
 
-    Weather comes from the same multi-source forecast at each point's own ETA. Terrain
-    uses the slope the caller inherited from the nearest monitored segment (or 0), and
-    there are no field reports for an unmonitored road, so the result is flagged as an
-    estimate rather than a monitored score.
+    The response deliberately separates weather risk from full road risk: these
+    points have no verified segment terrain/closure/incident linkage.
     """
     points = points[:80]
     cache = {}
@@ -248,16 +246,126 @@ def compute_point_forecast(depart_at_utc: datetime, points: list, chunk_minutes:
         try:
             weather = forecast_service.forecast_for_window(p["lat"], p["lon"], seg_start, seg_end, cache)
         except forecast_service.ForecastUnavailable:
-            out.append({"index": p.get("index", i), "risk_score": None})
+            out.append({"index": p.get("index", i), "risk_score": None, "weather_score": None})
             continue
         parts = risk_model.score_breakdown(**weather, avg_slope_deg=p.get("slope") or 0)
-        score = parts["overall"]
+        weather_score = parts["weather_score"]
         out.append({
-            "index": p.get("index", i), "risk_score": score, "risk_level": risk_model.classify_risk_level(score),
-            "weather_score": parts["weather_score"], "terrain_score": parts["terrain_score"],
-            "hazard_score": 0.0, "risk_driver": parts["driver"], **weather,
-            "estimated": True, "terrain_known": p.get("slope") is not None,
-            "name": "Unmonitored road (live weather estimate)",
-            "forecast_arrival": seg_start.isoformat(), "model_version": risk_model.MODEL_VERSION,
+            "index": p.get("index", i), "risk_score": weather_score,
+            "weather_score": weather_score, "weather_risk_level": risk_model.classify_risk_level(weather_score),
+            "risk_level": risk_model.classify_risk_level(weather_score),
+            "forecast_rain_1h_mm": weather.get("forecast_rain_1h_mm"),
+            "forecast_wind_kmh": weather.get("forecast_wind_kmh"),
+            "forecast_gust_kmh": weather.get("forecast_gust_kmh"),
+            "forecast_visibility_m": weather.get("forecast_visibility_m"),
+            "rain_probability_pct": weather.get("rain_probability_pct"),
+            "thunder_probability_pct": weather.get("thunder_probability_pct"),
+            "thunderstorm_expected": weather.get("thunderstorm_expected"),
+            "forecast_to_departure_mm": weather.get("forecast_to_departure_mm"),
+            "forecast_during_trip_mm": weather.get("forecast_during_trip_mm"),
+            "past_24h_mm": weather.get("past_24h_mm"),
+            "forecast_arrival": seg_start.isoformat(),
+            "sources": weather.get("sources", []),
+            "source_agreement": weather.get("source_agreement", "unknown"),
+            "data_age_min": weather.get("data_age_min", 0),
+            "forecast_fetched_at": weather.get("forecast_fetched_at"),
+            "forecast_updated_at": weather.get("forecast_updated_at"),
+            "forecast_valid_until": weather.get("forecast_valid_until"),
+            "provider": weather.get("source") or weather.get("weather_model"),
+            "estimated": True, "terrain_known": False,
+            "name": "Unmonitored road (weather forecast estimate)",
+            "model_version": risk_model.MODEL_VERSION,
         })
-    return {"points": out, "generated_at": datetime.now(timezone.utc).isoformat()}
+
+    valid = [p for p in out if p.get("weather_score") is not None]
+    report = None
+    if valid:
+        worst = max(valid, key=lambda p: float(p["weather_score"]))
+        peak_rain = max(valid, key=lambda p: float(p.get("forecast_rain_1h_mm") or 0))
+        max_wind = max(float(p.get("forecast_wind_kmh") or 0) for p in valid)
+        max_gust = max(float(p.get("forecast_gust_kmh") or 0) for p in valid)
+        visibility = [float(p["forecast_visibility_m"]) for p in valid if p.get("forecast_visibility_m") is not None]
+        sources = sorted({s for p in valid for s in (p.get("sources") or [])})
+        agreements = [p.get("source_agreement", "unknown") for p in valid]
+        if "low" in agreements:
+            confidence, confidence_note = "low", "Weather providers disagree at one or more route points."
+        elif agreements and all(a == "single_source" for a in agreements):
+            confidence, confidence_note = "medium", "Only one weather provider was available; no independent cross-check was possible."
+        elif "medium" in agreements:
+            confidence, confidence_note = "medium", "Weather providers broadly agree, with some differences in forecast values."
+        else:
+            confidence, confidence_note = "high", "Available independent weather providers broadly agree."
+        level = risk_model.classify_risk_level(float(worst["weather_score"]))
+        facts = [
+            f"Peak weather risk: {float(worst['weather_score']):.1f}/100 ({level}) at route point {worst['index']}.",
+            f"Peak forecast rain: {float(peak_rain.get('forecast_rain_1h_mm') or 0):.1f} mm/h.",
+            f"Maximum forecast wind: {max_wind:.0f} km/h; gusts up to {max_gust:.0f} km/h.",
+        ]
+        if visibility:
+            facts.append(f"Minimum forecast visibility: {min(visibility) / 1000:.1f} km.")
+        advice = []
+        if level in ("high", "severe"):
+            advice.append("Consider delaying departure if the journey is not urgent; compare the departure-time forecasts.")
+        if float(peak_rain.get("forecast_rain_1h_mm") or 0) >= 5:
+            advice.append("Heavy rain is forecast: reduce speed and do not cross flooded or flowing-water stretches.")
+        if max_gust >= 50:
+            advice.append("Strong gusts are forecast; high-sided vehicles should take extra care on exposed roads.")
+        if visibility and min(visibility) < 3000:
+            advice.append("Low visibility is forecast; reduce speed and use appropriate lights.")
+        if not advice:
+            advice.append("Weather risk is currently low to moderate; re-check the forecast shortly before departure.")
+        report = {
+            "headline": f"{level.capitalize()} weather risk expected" if level != "low" else "Low weather risk expected",
+            "level": level, "score": round(float(worst["weather_score"]), 1),
+            "facts": facts, "advice": advice, "confidence": confidence,
+            "confidence_note": confidence_note, "sources": sources,
+            "data_age_min": max(float(p.get("data_age_min") or 0) for p in valid),
+            "forecast_fetched_at": min((p["forecast_fetched_at"] for p in valid if p.get("forecast_fetched_at")), default=None),
+            "forecast_updated_at": min((p["forecast_updated_at"] for p in valid if p.get("forecast_updated_at")), default=None),
+            "forecast_valid_until": min((p["forecast_valid_until"] for p in valid if p.get("forecast_valid_until")), default=None),
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+            "coverage": {"points_with_forecast": len(valid), "points_requested": len(points)},
+            "scope": "weather_only_unmonitored_route",
+        }
+
+    # Compare the requested departure with later options, using the same route
+    # points and ETA offsets. Never extend beyond the provider forecast horizon.
+    departure_options = []
+    offsets_hours = (0, 1, 2, 3, 4, 6, 8, 10, 12, 18, 24)
+    horizon = forecast_service.max_forecastable_at()
+    for hours in offsets_hours:
+        candidate = depart_at_utc + timedelta(hours=hours)
+        if candidate > horizon:
+            break
+        scores = []
+        for p in points:
+            start = candidate + timedelta(minutes=float(p.get("offset_min") or 0))
+            try:
+                wx = forecast_service.forecast_for_window(p["lat"], p["lon"], start,
+                    start + timedelta(minutes=max(5, chunk_minutes)), cache)
+                scores.append(float(risk_model.score_breakdown(**wx, avg_slope_deg=0)["weather_score"]))
+            except forecast_service.ForecastUnavailable:
+                continue
+        if scores:
+            score = round(max(scores), 1)
+            departure_options.append({
+                "depart_at": candidate.isoformat(),
+                "depart_label": candidate.astimezone().strftime("%I:%M %p"),
+                "weather_score": score, "score": score,
+                "level": risk_model.classify_risk_level(score),
+            })
+    suggestion = None
+    if departure_options:
+        current = departure_options[0]
+        best = min(departure_options, key=lambda x: x["weather_score"])
+        if best["depart_at"] != current["depart_at"] and current["weather_score"] - best["weather_score"] >= 8:
+            suggestion = (f"Leaving at {best['depart_label']} may lower weather risk from "
+                          f"{current['weather_score']}/100 to {best['weather_score']}/100.")
+    if report is not None:
+        report["departure_options"] = departure_options
+        report["departure_suggestion"] = suggestion
+    return {
+        "points": out, "generated_at": datetime.now(timezone.utc).isoformat(),
+        "weather_report": report, "departure_options": departure_options,
+        "departure_suggestion": suggestion,
+    }
