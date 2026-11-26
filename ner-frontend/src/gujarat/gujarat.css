@@ -74,3 +74,17 @@
 .gj-map-legend .gj-risk-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-weight:600}
 .gj-map-legend .gj-risk-legend b{color:#405d63;margin-right:3px}
 .gj-map-legend .gj-risk-legend i{display:inline-block;width:22px;height:5px;border-radius:4px;vertical-align:middle}
+
+/* NER-style route weather narrative, confidence and departure-time comparison. */
+.gj-weather-report{margin-top:14px;padding:12px;border-radius:10px;background:#173b56;color:#dce8f1;font-size:12px;line-height:1.55;min-width:0}
+.gj-weather-report>strong{display:block;color:#ff784e;font-size:14px;margin-bottom:7px}
+.gj-weather-report ul{margin:6px 0 10px;padding-left:18px}
+.gj-weather-report li{margin:3px 0}
+.gj-weather-report>b{display:block;margin-top:8px}
+.gj-weather-confidence{margin-top:10px;padding:9px;border-radius:7px;background:#ffffff12;color:#cbd8e2}
+.gj-departure-suggestion{margin:9px 0 0;padding:9px;border:1px solid #e58b35;border-radius:7px;color:#ffd49b}
+.gj-departure-options{margin-top:12px}
+.gj-departure-options> b{display:block;margin-bottom:7px}
+.gj-departure-options>div{display:flex;flex-wrap:wrap;gap:6px}
+.gj-departure-options span{padding:5px 9px;border:1px solid #e58b35;border-radius:18px;color:#ffd49b;font-size:11px}
+.gj-departure-options span.current{border-color:#ffffff;color:#fff;background:#ffffff18}
