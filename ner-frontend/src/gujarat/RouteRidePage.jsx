@@ -219,7 +219,9 @@ export default function RouteRidePage() {
       .then(result => {
         if (cancelled) return;
         setTerrain({ ...result, routeId: selectedRoute.id });
-        setTerrainNotice('Terrain profile loaded from a 90 m elevation model.');
+        setTerrainNotice(result.cache_hit
+          ? 'Terrain profile loaded from cache (' + Math.floor((result.cache_age_seconds || 0) / 3600) + 'h old).'
+          : 'Terrain profile fetched and cached from a 90 m elevation model.');
       })
       .catch(error => {
         if (cancelled) return;
