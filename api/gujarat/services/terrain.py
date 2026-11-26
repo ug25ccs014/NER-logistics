@@ -24,32 +24,66 @@ def build_terrain_profile(points):
     if len(points) > MAX_POINTS:
         raise ValueError(f"At most {MAX_POINTS} route points can be profiled.")
 
-    # Query small batches to avoid proxy/request-line limits on hosted backends.
-    # The provider supports up to 100 points, but 10-point batches are more robust.
+    # Primary: Open-Meteo Copernicus GLO-90. If its public daily quota is
+    # exhausted, fall back to OpenTopoData SRTM90m (global coverage).
     elevations = []
-    for offset in range(0, len(points), 10):
-        batch = points[offset:offset + 10]
-        params = {
-            "latitude": ",".join(f"{p['lat']:.6f}" for p in batch),
-            "longitude": ",".join(f"{p['lon']:.6f}" for p in batch),
-        }
-        response = requests.get(ELEVATION_URL, params=params, timeout=(8, 25))
-        if not response.ok:
-            detail = ""
-            try:
-                payload = response.json()
-                detail = payload.get("reason", "") if isinstance(payload, dict) else ""
-            except ValueError:
-                detail = response.text[:160]
-            raise RuntimeError(
-                f"Elevation provider returned HTTP {response.status_code}"
-                + (f": {detail}" if detail else "")
+    provider_used = None
+    provider_dataset = None
+    provider_resolution = None
+
+    try:
+        for offset in range(0, len(points), 10):
+            batch = points[offset:offset + 10]
+            params = {
+                "latitude": ",".join(f"{p['lat']:.6f}" for p in batch),
+                "longitude": ",".join(f"{p['lon']:.6f}" for p in batch),
+            }
+            response = requests.get(ELEVATION_URL, params=params, timeout=(8, 25))
+            if not response.ok:
+                detail = ""
+                try:
+                    payload = response.json()
+                    detail = payload.get("reason", "") if isinstance(payload, dict) else ""
+                except ValueError:
+                    detail = response.text[:160]
+                raise RuntimeError(
+                    f"Open-Meteo HTTP {response.status_code}"
+                    + (f": {detail}" if detail else "")
+                )
+            payload = response.json()
+            batch_elevations = payload.get("elevation")
+            if not isinstance(batch_elevations, list) or len(batch_elevations) != len(batch):
+                raise RuntimeError("Open-Meteo returned an incomplete profile.")
+            elevations.extend(batch_elevations)
+        provider_used = "Open-Meteo Elevation API"
+        provider_dataset = "Copernicus DEM GLO-90"
+        provider_resolution = 90
+    except (requests.RequestException, RuntimeError) as primary_error:
+        # OpenTopoData accepts up to 100 pipe-separated locations per request.
+        # Keep a single request for this route to respect its public fair-use limits.
+        locations = "|".join(f"{p['lat']:.6f},{p['lon']:.6f}" for p in points)
+        fallback_url = "https://api.opentopodata.org/v1/srtm90m"
+        try:
+            fallback = requests.get(
+                fallback_url,
+                params={"locations": locations, "interpolation": "bilinear"},
+                timeout=(8, 30),
             )
-        payload = response.json()
-        batch_elevations = payload.get("elevation")
-        if not isinstance(batch_elevations, list) or len(batch_elevations) != len(batch):
-            raise RuntimeError("Elevation provider returned an incomplete profile.")
-        elevations.extend(batch_elevations)
+            fallback.raise_for_status()
+            fallback_payload = fallback.json()
+            results = fallback_payload.get("results")
+            if fallback_payload.get("status") != "OK" or not isinstance(results, list) or len(results) != len(points):
+                raise RuntimeError(f"OpenTopoData returned status {fallback_payload.get('status')!r} or incomplete results.")
+            elevations = [item.get("elevation") for item in results]
+            if any(value is None for value in elevations):
+                raise RuntimeError("OpenTopoData has no elevation value for one or more route points.")
+            provider_used = "OpenTopoData public API (fallback)"
+            provider_dataset = "SRTM90m"
+            provider_resolution = 90
+        except (requests.RequestException, ValueError, RuntimeError) as fallback_error:
+            raise RuntimeError(
+                f"Open-Meteo failed ({primary_error}); OpenTopoData fallback failed ({fallback_error})."
+            ) from fallback_error
 
 
     samples = []
@@ -96,9 +130,9 @@ def build_terrain_profile(points):
     mean_grade = sum(grades) / len(grades) if grades else 0.0
     terrain_class = "steep" if max_grade >= 6 else "rolling" if max_grade >= 3 else "mostly_flat"
     return {
-        "source": "Open-Meteo Elevation API",
-        "dataset": "Copernicus DEM GLO-90",
-        "resolution_m": 90,
+        "source": provider_used,
+        "dataset": provider_dataset,
+        "resolution_m": provider_resolution,
         "data_status": "UNVERIFIED",
         "point_count": len(samples),
         "valid_elevation_points": len(valid_elevations),
@@ -113,5 +147,5 @@ def build_terrain_profile(points):
         "terrain_class": terrain_class,
         "samples": samples,
         "legs": legs,
-        "note": "Indicative route terrain from a 90 m digital elevation model. Short road gradients may be smoothed or missed. This is not a surveyed grade, verified road condition, or complete safety score.",
+        "note": "Indicative route terrain from a 90 m digital elevation model. Short road gradients may be smoothed or missed. This is not a surveyed grade, verified road condition, or complete safety score. OpenTopoData fallback uses SRTM90m and is subject to public fair-use limits.",
     }
