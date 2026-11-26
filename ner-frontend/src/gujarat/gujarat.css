@@ -113,3 +113,8 @@
 .gj-coverage-grid b{font-size:13px;color:#294c55;text-align:left;overflow-wrap:anywhere}
 .gj-coverage-explanation{margin:10px 0 0;padding:10px 12px;border-radius:8px;background:#fff8eb;color:#806b4e;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
 @media(max-width:620px){.gj-coverage-grid{grid-template-columns:1fr}}
+
+/* The complete weather panel is a single vertical block inside the sidebar card. */
+.gj-route-info-card>.gj-weather-content{display:block!important;width:100%;min-width:0;box-sizing:border-box}
+.gj-weather-content>.gj-weather-metrics{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;width:100%;min-width:0}
+.gj-weather-content>.gj-weather-report{display:block;width:100%;min-width:0;box-sizing:border-box}
