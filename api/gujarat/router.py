@@ -202,6 +202,9 @@ def gujarat_route_intelligence(body: RouteIntelligenceIn, current: dict = Depend
     finally:
         conn.close()
 
+    inventory_row = _fetch_one("SELECT COUNT(*) AS total_segments FROM gujarat_road_segments")
+    total_segments = int((inventory_row or {}).get("total_segments") or 0)
+
     unique = {}
     for item in matched:
         if item.get("matched"):
@@ -211,6 +214,7 @@ def gujarat_route_intelligence(body: RouteIntelligenceIn, current: dict = Depend
     blocked = [x for x in unique.values() if str(x["status"] or "").lower() == "blocked"]
     return {
         "region": "GUJARAT",
+        "total_inventory_segments": total_segments,
         "points_checked": len(body.points),
         "points_matched": sum(1 for x in matched if x.get("matched")),
         "unique_segments_matched": len(unique),
