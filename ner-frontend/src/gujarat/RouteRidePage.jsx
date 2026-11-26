@@ -239,24 +239,34 @@ export default function RouteRidePage() {
           <p style={{fontSize:12,color:'#9aa4af'}}>{weatherBusy ? 'Fetching weather along the route…' : weatherNotice}</p>
           {weather?.routeId !== selectedRoute?.id && selectedRoute && <p style={{fontSize:12,color:'#c69b57'}}>Weather shown for another alternative. Refresh to check the selected route.</p>}
           {weather?.routeId === selectedRoute?.id && weather?.scored?.length > 0 && (() => {
-            const worst = weather.scored.reduce((a, b) => b.risk_score > a.risk_score ? b : a);
+            const worst = weather.scored.reduce((a, b) => Number(b.weather_score ?? 0) > Number(a.weather_score ?? 0) ? b : a);
             const rain = Math.max(...weather.scored.map(p => Number(p.forecast_rain_1h_mm || 0)));
             const wind = Math.max(...weather.scored.map(p => Number(p.forecast_wind_kmh || 0)));
             const gust = Math.max(...weather.scored.map(p => Number(p.forecast_gust_kmh || 0)));
-            const visibility = Math.min(...weather.scored.map(p => Number(p.forecast_visibility_m || 999999)));
+            const visibilityValues = weather.scored.map(p => p.forecast_visibility_m).filter(v => v !== null && v !== undefined);
+            const visibility = visibilityValues.length ? Math.min(...visibilityValues) : null;
             const sources = [...new Set(weather.scored.flatMap(p => p.sources || []))];
-            const level = String(worst.risk_level || 'unknown').toUpperCase();
-            const tone = worst.risk_score >= 75 ? '#dc5555' : worst.risk_score >= 55 ? '#e58b35' : worst.risk_score >= 30 ? '#d2ad42' : '#168b80';
+            const score = Number(worst.weather_score ?? 0);
+            const level = score >= 75 ? 'SEVERE' : score >= 55 ? 'HIGH' : score >= 30 ? 'MODERATE' : 'LOW';
+            const tone = score >= 75 ? '#dc5555' : score >= 55 ? '#e58b35' : score >= 30 ? '#d2ad42' : '#168b80';
+            const age = Math.max(...weather.scored.map(p => Number(p.data_age_min || 0)));
+            const agreements = [...new Set(weather.scored.map(p => p.source_agreement || 'unknown'))];
+            const confidence = agreements.includes('low') ? 'Sources disagree' : agreements.includes('single_source') ? 'Single source only' : agreements.includes('medium') ? 'Partial agreement' : 'Sources broadly agree';
+            const rainEstimated = weather.scored.some(p => p.rain_probability_estimated);
             return <div style={{marginTop:10}}>
-              <div style={{fontSize:18,fontWeight:700,color:tone}}>{level} estimated weather risk · {Number(worst.risk_score).toFixed(0)}/100</div>
+              <div style={{fontSize:18,fontWeight:700,color:tone}}>{level} weather-risk estimate · {score.toFixed(0)}/100</div>
               <div style={{fontSize:12,marginTop:7,lineHeight:1.8}}>
-                <div>Peak rain: <b>{rain.toFixed(1)} mm/h</b></div>
-                <div>Wind: <b>{wind.toFixed(0)} km/h</b> · Gusts: <b>{gust.toFixed(0)} km/h</b></div>
-                <div>Minimum forecast visibility: <b>{visibility < 999999 ? (visibility / 1000).toFixed(1) + ' km' : 'Unavailable'}</b></div>
-                <div>Route points checked: <b>{weather.scored.length}</b></div>
-                <div>Sources: <b>{sources.join(' + ') || 'Provider details unavailable'}</b></div>
+                <div>Peak forecast rain: <b>{rain.toFixed(1)} mm/h</b></div>
+                <div>Forecast wind: <b>{wind.toFixed(0)} km/h</b> · Gusts: <b>{gust.toFixed(0)} km/h</b></div>
+                <div>Minimum forecast visibility: <b>{visibility !== null ? (visibility / 1000).toFixed(1) + ' km' : 'Unavailable'}</b></div>
+                <div>Route points with forecast data: <b>{weather.scored.length}</b></div>
+                <div>Weather sources: <b>{sources.join(' + ') || 'Unavailable'}</b></div>
+                <div>Provider agreement: <b>{confidence}</b></div>
+                <div>Forecast cache age: <b>{age} min</b></div>
+                {rainEstimated && <div style={{color:'#c69b57'}}>Rain probability is estimated because a provider did not supply it.</div>}
               </div>
-              <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>Estimated from forecast points using the shared weather-risk model. This is not a monitored Gujarat road-condition score or a safety guarantee.</p>
+              <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
+              <p style={{fontSize:11,color:'#9aa4af'}}>Forecasts are estimates from external providers and can differ from actual local conditions.</p>
             </div>;
           })()}
           <button type="button" onClick={async () => {
