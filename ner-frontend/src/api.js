@@ -213,6 +213,7 @@ export const api = {
 
   // Live weather-based risk for route stretches outside the monitored network.
   forecastPoints: (body) => request('/forecast/points', { method: 'POST', body: JSON.stringify(body) }),
+  gujaratRouteIntelligence: (points) => request('/gujarat/roadways/route-intelligence', { method: 'POST', body: JSON.stringify({ points }) }),
 
   // Route segments (for the map)
   segments: () => request('/segments'),
