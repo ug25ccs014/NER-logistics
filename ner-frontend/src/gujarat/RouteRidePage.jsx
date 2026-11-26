@@ -270,7 +270,29 @@ export default function RouteRidePage() {
         {routes.length > 0 && <section className="gj-route-info-card">
           <strong>Route alternatives</strong>
           <p style={{fontSize:11,color:'#9aa4af'}}>Ranked by estimated duration · OSRM road routing · no live traffic</p>
-          {routes.map((r, i) => <button key={r.id} type="button" onClick={() => setSelected(i)} style={{display:'block',width:'100%',textAlign:'left',padding:10,marginTop:7,borderRadius:8,border:i===selected?'2px solid #168b80':'1px solid #52606d',background:i===selected?'rgba(22,139,128,.12)':'transparent',color:'inherit',cursor:'pointer'}}>
+          {routes.map((r, i) => <button key={r.id} type="button" onClick={async () => {
+            setSelected(i);
+            if (weather?.routeId === r.id || weatherBusy) return;
+            setWeatherBusy(true); setWeatherNotice('Fetching forecast for this alternative…');
+            try {
+              const step = Math.max(1, Math.floor(r.coords.length / 18));
+              const indices = [];
+              for (let j = 0; j < r.coords.length; j += step) indices.push(j);
+              if (indices[indices.length - 1] !== r.coords.length - 1) indices.push(r.coords.length - 1);
+              const result = await api.forecastPoints({
+                depart_at: new Date().toISOString(),
+                chunk_minutes: Math.max(5, Math.ceil(r.durationMin / indices.length)),
+                points: indices.slice(0, 25).map((idx, index) => ({
+                  lat: r.coords[idx][0], lon: r.coords[idx][1],
+                  offset_min: r.durationMin * index / Math.max(1, indices.length - 1), index: idx,
+                })),
+              });
+              const scored = (result.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
+              setWeather({ ...result, scored, mapSections: buildWeatherSections(r, scored), routeId: r.id, checkedAt: new Date().toISOString() });
+              setWeatherNotice(scored.length ? 'Forecast ready for this alternative.' : 'No usable forecast values returned.');
+            } catch (error) { setWeatherNotice('Forecast unavailable: ' + error.message); }
+            finally { setWeatherBusy(false); }
+          }} style={{display:'block',width:'100%',textAlign:'left',padding:10,marginTop:7,borderRadius:8,border:i===selected?'2px solid #168b80':'1px solid #52606d',background:i===selected?'rgba(22,139,128,.12)':'transparent',color:'inherit',cursor:'pointer'}}>
             <b>{i === 0 ? 'Fastest · ' : 'Alternative ' + (i + 1) + ' · '}{r.durationMin.toFixed(0)} min</b>
             <div style={{fontSize:12,opacity:.8,marginTop:3}}>{r.distanceKm.toFixed(1)} km · estimated</div>
           </button>)}
