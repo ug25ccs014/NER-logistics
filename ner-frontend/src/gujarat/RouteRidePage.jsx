@@ -293,7 +293,7 @@ export default function RouteRidePage() {
             const rainEstimated = weather.scored.some(p => p.rain_probability_estimated);
             return <div style={{marginTop:10}}>
               <div style={{fontSize:18,fontWeight:700,color:tone}}>{level} weather-risk estimate · {score.toFixed(0)}/100</div>
-              <div style={{fontSize:12,marginTop:7,lineHeight:1.8}}>
+              <div className="gj-weather-metrics">
                 <div>Peak forecast rain: <b>{rain.toFixed(1)} mm/h</b></div>
                 <div>Forecast wind: <b>{wind.toFixed(0)} km/h</b> · Gusts: <b>{gust.toFixed(0)} km/h</b></div>
                 <div>Minimum forecast visibility: <b>{visibility !== null ? (visibility / 1000).toFixed(1) + ' km' : 'Unavailable'}</b></div>
@@ -303,7 +303,16 @@ export default function RouteRidePage() {
                 <div>Forecast cache age: <b>{age} min</b></div>
                 {rainEstimated && <div style={{color:'#c69b57'}}>Rain probability is estimated because a provider did not supply it.</div>}
               </div>
-              <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
+              
+              <div className="gj-weather-section-list">
+                <strong>Weather along route</strong>
+                {weather.scored.map((point, index) => <div className="gj-weather-section" key={point.index ?? index}>
+                  <div><b>Route point {Number(point.index ?? index) + 1}</b><span>{point.risk_level || 'Forecast available'}</span></div>
+                  <p>Weather risk: {Number(point.weather_score ?? 0).toFixed(0)}/100 · Rain: {Number(point.forecast_rain_1h_mm || 0).toFixed(1)} mm/h · Wind: {Number(point.forecast_wind_kmh || 0).toFixed(0)} km/h</p>
+                  <small>{point.forecast_arrival ? 'Estimated arrival: ' + new Date(point.forecast_arrival).toLocaleString() : 'Arrival time unavailable'}</small>
+                </div>)}
+              </div>
+<p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
               <p style={{fontSize:11,color:'#9aa4af'}}>Forecasts are estimates from external providers and can differ from actual local conditions.</p>
             </div>;
           })()}
