@@ -14,7 +14,7 @@ from typing import Optional
 import auth
 import db
 from gujarat.services.roadways import compare_routes
-from gujarat.services.terrain import build_terrain_profile
+from gujarat.services.terrain import get_cached_terrain_profile
 
 router = APIRouter(tags=["Gujarat Logistics"])
 _bearer = HTTPBearer(auto_error=False)
@@ -155,7 +155,7 @@ def gujarat_route_terrain_profile(body: TerrainProfileIn, current: dict = Depend
     try:
         return {
             "region": "GUJARAT",
-            **build_terrain_profile([point.dict() for point in body.points]),
+            **get_cached_terrain_profile([point.dict() for point in body.points]),
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
