@@ -131,6 +131,7 @@ export default function RouteRidePage() {
   const [destination, setDestination] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [selected, setSelected] = useState(0);
+  const [mapLayer, setMapLayer] = useState('weather');
   const [busy, setBusy] = useState(false);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weather, setWeather] = useState(null);
@@ -467,6 +468,18 @@ export default function RouteRidePage() {
       </aside>
             <section className="gj-route-map-card">
         <div className="gj-map-heading"><div><strong>Regional road map</strong><small>{region.label}</small></div><span>© OpenStreetMap contributors</span></div>
+        <div className="gj-map-layer-controls" role="group" aria-label="Map data layer">
+          {[
+            ['weather', 'Weather forecast'],
+            ['terrain', 'Terrain & slope'],
+            ['roads', 'Road intelligence'],
+          ].map(([value, label]) => <button key={value} type="button" aria-pressed={mapLayer === value} onClick={() => setMapLayer(value)} className={mapLayer === value ? 'active' : ''}>{label}</button>)}
+        </div>
+        <p className="gj-map-layer-note">{mapLayer === 'weather'
+          ? 'Forecast layer · estimated weather risk only; not live traffic or road-condition data.'
+          : mapLayer === 'terrain'
+            ? 'Terrain layer · indicative 90 m elevation model; sampled slopes may miss short gradients.'
+            : 'Road inventory layer · colours show record status and coverage, not a safety rating.'}</p>
         <MapContainer center={region.center} zoom={region.zoom} scrollWheelZoom className="gj-live-map">
           <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <RecenterMap center={mapCenter} zoom={gps ? 14 : region.zoom} />
@@ -475,18 +488,43 @@ export default function RouteRidePage() {
           {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
           {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
           {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
-          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <React.Fragment key={'weather-' + section.id}>
+          {mapLayer === 'weather' && weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <React.Fragment key={'weather-' + section.id}>
             <Polyline positions={section.coords} pathOptions={{ color: '#ffffff', weight: 12, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />
             <Polyline positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 1, lineCap: 'round', lineJoin: 'round' }} />
           </React.Fragment>)}
-          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.scored || []).filter(point => Number.isInteger(Number(point.index)) && selectedRoute.coords[Number(point.index)]).map((point, i) => {
+          {mapLayer === 'weather' && weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.scored || []).filter(point => Number.isInteger(Number(point.index)) && selectedRoute.coords[Number(point.index)]).map((point, i) => {
             const score = Number(point.weather_score ?? point.risk_score);
             return <CircleMarker key={'weather-checkpoint-' + i} center={selectedRoute.coords[Number(point.index)]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: weatherRiskColor(score), fillOpacity: 1 }}><Popup><strong>Weather checkpoint {i + 1}</strong><br/>Weather risk: {Number.isFinite(score) ? score.toFixed(0) + '/100' : 'Unavailable'}<br/>Rain: {point.forecast_rain_1h_mm ?? 'n/a'} mm/h<br/>Wind: {point.forecast_wind_kmh ?? 'n/a'} km/h<br/>Forecast: {point.provider || (point.sources || []).join(', ') || 'External provider'}</Popup></CircleMarker>;
+          })}
+          {mapLayer === 'terrain' && terrain && selectedRoute && terrain.routeId === selectedRoute.id && (terrain.legs || []).map((leg, i) => {
+            const samples = terrain.samples || [];
+            const first = samples[leg.from_index], second = samples[leg.to_index];
+            if (!first || !second) return null;
+            const grade = Math.abs(Number(leg.grade_percent || 0));
+            const color = grade >= 6 ? '#dc3f3f' : grade >= 3 ? '#ed7d24' : grade >= 1 ? '#e2b52e' : '#20a36b';
+            return <Polyline key={'terrain-grade-' + i} positions={[[first.lat, first.lon], [second.lat, second.lon]]} pathOptions={{ color, weight: 7, opacity: 1 }}>
+              <Popup><strong>Terrain section {i + 1}</strong><br/>Signed grade: {leg.grade_percent}%<br/>Slope angle: {leg.slope_angle_deg}°<br/>Elevation change: {leg.elevation_change_m} m<br/>DEM: {terrain.dataset} ({terrain.resolution_m} m)</Popup>
+            </Polyline>;
+          })}
+          {mapLayer === 'roads' && roadIntelligence && selectedRoute && (roadIntelligence.point_matches || []).map((match, i) => {
+            const count = Math.min(24, selectedRoute.coords.length);
+            const routeIndex = Math.round(i * (selectedRoute.coords.length - 1) / Math.max(1, count - 1));
+            const position = selectedRoute.coords[routeIndex];
+            if (!position) return null;
+            const color = !match.matched ? '#7b8794' : String(match.status || '').toLowerCase() === 'blocked' ? '#dc3f3f' : match.data_status === 'VERIFIED' ? '#168b80' : '#d2a23a';
+            return <CircleMarker key={'road-match-' + i} center={position} radius={8} pathOptions={{ color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 0.95 }}>
+              <Popup><strong>{match.matched ? (match.name || 'Matched road segment') : 'No road match'}</strong><br/>{match.matched ? 'Segment ID: ' + match.segment_id : (match.reason || 'No inventory record nearby')}<br/>Data status: {match.data_status || 'UNAVAILABLE'}<br/>Road status: {match.status || 'UNKNOWN'}<br/>Stored risk score: {match.risk_score ?? 'Unavailable'}<br/>Match distance: {match.distance_m != null ? match.distance_m + ' m' : 'n/a'}<br/>Inventory coverage only—not confirmed road safety.</Popup>
+            </CircleMarker>;
           })}
           {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
           {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
-        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span className="gj-risk-legend"><b>Forecast road risk</b><i style={{background:"#20a36b"}}></i> Low (0–29) <i style={{background:"#e2b52e"}}></i> Moderate (30–54) <i style={{background:"#ed7d24"}}></i> High (55–74) <i style={{background:"#dc3f3f"}}></i> Severe (75–100)</span></div>
+        <div className="gj-map-legend">
+          <span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span>
+          {mapLayer === 'weather' && <span className="gj-risk-legend"><b>Weather risk</b><i style={{background:"#20a36b"}}></i> Low <i style={{background:"#e2b52e"}}></i> Moderate <i style={{background:"#ed7d24"}}></i> High <i style={{background:"#dc3f3f"}}></i> Severe</span>}
+          {mapLayer === 'terrain' && <span className="gj-risk-legend"><b>Absolute sampled grade</b><i style={{background:"#20a36b"}}></i> &lt;1% <i style={{background:"#e2b52e"}}></i> 1–2.9% <i style={{background:"#ed7d24"}}></i> 3–5.9% <i style={{background:"#dc3f3f"}}></i> ≥6%</span>}
+          {mapLayer === 'roads' && <span className="gj-risk-legend"><b>Inventory status</b><i style={{background:"#168b80"}}></i> Verified <i style={{background:"#d2a23a"}}></i> Unverified <i style={{background:"#dc3f3f"}}></i> Blocked <i style={{background:"#7b8794"}}></i> No match</span>}
+        </div>
       </section>
     </div>
     <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. Route colours show weather-only forecast risk where forecast data is available; they do not represent a complete road-safety score.</p>
