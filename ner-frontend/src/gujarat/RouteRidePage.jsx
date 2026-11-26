@@ -168,6 +168,8 @@ export default function RouteRidePage() {
 
   useEffect(() => {
     if (!selectedRoute?.coords?.length) {
+      setOfficialRoadReference(null);
+      setOfficialRoadReferenceBusy(false);
       setRoadIntelligence(null);
       setRoadIntelligenceNotice('Gujarat road coverage will be checked after route search.');
       return undefined;
