@@ -61,3 +61,10 @@
 .gj-weather-section p,.gj-weather-section small{font-size:11px;line-height:1.5;margin:0;color:#637a7b;overflow-wrap:anywhere}
 
 .gj-map-legend span i:not(.gj-legend-user):not(.gj-legend-zone){display:inline-block;width:10px;height:10px;border-radius:50%;margin:0 2px;vertical-align:middle}
+
+/* Coverage metrics must not inherit the info-card's horizontal flex-row rule. */
+.gj-route-info-card>.gj-coverage-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;align-items:start;min-width:0}
+.gj-route-info-card>.gj-coverage-metrics>div{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;min-width:0;border-top:1px solid #edf1ef;padding-top:8px;overflow-wrap:anywhere}
+.gj-route-info-card>.gj-coverage-metrics>div span{font-size:11px;color:#7b8e91;text-align:left}
+.gj-route-info-card>.gj-coverage-metrics>div b{font-size:13px;text-align:left;color:#294c55}
+@media(max-width:620px){.gj-route-info-card>.gj-coverage-metrics{grid-template-columns:1fr}}
