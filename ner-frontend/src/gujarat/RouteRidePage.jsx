@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { api } from '../api.js';
 import 'leaflet/dist/leaflet.css';
@@ -354,14 +354,14 @@ export default function RouteRidePage() {
           
           <strong>Gujarat monitored-road coverage</strong>
           <p style={{fontSize:12,color:'#9aa4af'}}>{roadIntelligenceBusy ? 'Checking Gujarat road inventory…' : roadIntelligenceNotice}</p>
-          {roadIntelligence && <div style={{fontSize:12,lineHeight:1.8}}>
-            <div>Route sample points matched: <b>{roadIntelligence.points_matched}/{roadIntelligence.points_checked}</b></div>
-            <div>Unique Gujarat segments: <b>{roadIntelligence.unique_segments_matched}</b></div>
-            <div>Segments with stored risk scores: <b>{roadIntelligence.segments_with_risk_scores}</b></div>
-            <div>Verified road segments: <b>{roadIntelligence.verified_segments_matched}</b></div>
-            <div>Blocked segments matched: <b>{roadIntelligence.blocked_segments_matched}</b></div>
-            <div>Stored risk coverage: <b>{roadIntelligence.risk_coverage}</b></div>
-            <div>Field-hazard coverage: <b>{roadIntelligence.hazard_coverage}</b></div>
+          {roadIntelligence && <div className="gj-coverage-metrics" style={{fontSize:12,lineHeight:1.8}}>
+            <div><span>Route sample points matched</span><b>{roadIntelligence.points_matched}/{roadIntelligence.points_checked}</b></div>
+            <div><span>Unique Gujarat segments</span><b>{roadIntelligence.unique_segments_matched}</b></div>
+            <div><span>Segments with stored risk scores</span><b>{roadIntelligence.segments_with_risk_scores}</b></div>
+            <div><span>Verified road segments</span><b>{roadIntelligence.verified_segments_matched}</b></div>
+            <div><span>Blocked segments matched</span><b>{roadIntelligence.blocked_segments_matched}</b></div>
+            <div><span>Stored risk coverage</span><b>{roadIntelligence.risk_coverage}</b></div>
+            <div><span>Field-hazard coverage</span><b>{roadIntelligence.hazard_coverage}</b></div>
             <p style={{fontSize:11,color:'#9aa4af'}}>{roadIntelligence.note}</p>
           </div>}
 <strong>Route intelligence</strong>
@@ -389,7 +389,11 @@ export default function RouteRidePage() {
           {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
           {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
           {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
-          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
+          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 9, opacity: 1, lineCap: 'round', lineJoin: 'round' }} />)}
+          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.scored || []).filter(point => Number.isInteger(Number(point.index)) && selectedRoute.coords[Number(point.index)]).map((point, i) => {
+            const score = Number(point.weather_score ?? point.risk_score);
+            return <CircleMarker key={'weather-checkpoint-' + i} center={selectedRoute.coords[Number(point.index)]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: weatherRiskColor(score), fillOpacity: 1 }}><Popup><strong>Weather checkpoint {i + 1}</strong><br/>Weather risk: {Number.isFinite(score) ? score.toFixed(0) + '/100' : 'Unavailable'}<br/>Rain: {point.forecast_rain_1h_mm ?? 'n/a'} mm/h<br/>Wind: {point.forecast_wind_kmh ?? 'n/a'} km/h<br/>Forecast: {point.provider || (point.sources || []).join(', ') || 'External provider'}</Popup></CircleMarker>;
+          })}
           {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
           {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
