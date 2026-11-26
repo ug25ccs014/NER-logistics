@@ -389,7 +389,7 @@ export default function RouteRidePage() {
           {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
           {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
           {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
-          {weather?.routeId === selectedRoute?.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
+          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />)}
           {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
           {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
