@@ -59,3 +59,5 @@
 .gj-weather-section>div{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .gj-weather-section>div span{font-size:10px;color:#168b80;font-weight:700}
 .gj-weather-section p,.gj-weather-section small{font-size:11px;line-height:1.5;margin:0;color:#637a7b;overflow-wrap:anywhere}
+
+.gj-map-legend span i:not(.gj-legend-user):not(.gj-legend-zone){display:inline-block;width:10px;height:10px;border-radius:50%;margin:0 2px;vertical-align:middle}
