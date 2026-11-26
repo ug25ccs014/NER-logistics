@@ -68,3 +68,9 @@
 .gj-route-info-card>.gj-coverage-metrics>div span{font-size:11px;color:#7b8e91;text-align:left}
 .gj-route-info-card>.gj-coverage-metrics>div b{font-size:13px;text-align:left;color:#294c55}
 @media(max-width:620px){.gj-route-info-card>.gj-coverage-metrics{grid-template-columns:1fr}}
+
+/* Clear green-to-red road-risk legend; wrap cleanly on narrow map cards. */
+.gj-map-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.gj-map-legend .gj-risk-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-weight:600}
+.gj-map-legend .gj-risk-legend b{color:#405d63;margin-right:3px}
+.gj-map-legend .gj-risk-legend i{display:inline-block;width:22px;height:5px;border-radius:4px;vertical-align:middle}
