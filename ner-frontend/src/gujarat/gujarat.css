@@ -48,3 +48,14 @@
 .gj-user-location-icon span{display:block;width:14px;height:14px;background:#1685e8;border:3px solid white;border-radius:50%;box-shadow:0 1px 7px #1238}
 @media(max-width:1000px){.gj-route-layout{grid-template-columns:1fr}.gj-live-map{height:480px}}
 @media(max-width:620px){.gj-route-toolbar{align-items:stretch;flex-direction:column}.gj-route-toolbar select{width:100%;min-width:0;box-sizing:border-box}.gj-gps-control{flex-wrap:wrap}.gj-live-map{height:390px}.gj-map-heading{align-items:flex-start;gap:8px}.gj-map-heading>span{max-width:130px;text-align:right}}
+
+/* Route weather panel: prevent the info-card flex row rule from squeezing metric text. */
+.gj-weather-metrics{display:grid;grid-template-columns:1fr;gap:7px;margin-top:7px;font-size:12px;line-height:1.65;min-width:0}
+.gj-weather-metrics>div{display:block;min-width:0;overflow-wrap:anywhere}
+.gj-weather-metrics b{display:inline;text-align:left;overflow-wrap:anywhere}
+.gj-weather-section-list{display:grid;gap:8px;margin-top:14px;min-width:0}
+.gj-weather-section-list>strong{font-size:12px}
+.gj-weather-section{display:grid;gap:3px;padding:9px 0;border-top:1px solid #edf1ef;min-width:0}
+.gj-weather-section>div{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.gj-weather-section>div span{font-size:10px;color:#168b80;font-weight:700}
+.gj-weather-section p,.gj-weather-section small{font-size:11px;line-height:1.5;margin:0;color:#637a7b;overflow-wrap:anywhere}
