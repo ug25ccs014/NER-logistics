@@ -338,6 +338,18 @@ export default function RouteRidePage() {
                 <div>Forecast cache age: <b>{age} min</b></div>
                 {rainEstimated && <div style={{color:'#c69b57'}}>Rain probability is estimated because a provider did not supply it.</div>}
               </div>
+              {weather.weather_report && <div className="gj-weather-report">
+                <strong>{weather.weather_report.headline}</strong>
+                <ul>{(weather.weather_report.facts || []).map((fact, i) => <li key={'wx-fact-' + i}>{fact}</li>)}</ul>
+                <b>What to do</b>
+                <ul>{(weather.weather_report.advice || []).map((tip, i) => <li key={'wx-advice-' + i}>{tip}</li>)}</ul>
+                <div className="gj-weather-confidence"><b>{weather.weather_report.confidence || 'unknown'} confidence</b> — {weather.weather_report.confidence_note || 'Provider agreement information unavailable.'}</div>
+                {weather.weather_report.departure_suggestion && <p className="gj-departure-suggestion">{weather.weather_report.departure_suggestion}</p>}
+                {(weather.departure_options || []).length > 0 && <div className="gj-departure-options">
+                  <b>Weather risk by departure time</b>
+                  <div>{weather.departure_options.map((option, i) => <span key={option.depart_at} className={i === 0 ? 'current' : ''}>{option.depart_label} · {Number(option.weather_score).toFixed(0)}/100</span>)}</div>
+                </div>}
+              </div>}
               <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>This score uses the weather component only. It is not a complete road-safety score. Gujarat terrain, closures and verified incident coverage are not yet connected to this route.</p>
               <p style={{fontSize:11,color:'#9aa4af'}}>Forecasts are estimates from external providers and can differ from actual local conditions.</p>
             </div>;
