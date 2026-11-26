@@ -350,7 +350,7 @@ def compute_point_forecast(depart_at_utc: datetime, points: list, chunk_minutes:
             score = round(max(scores), 1)
             departure_options.append({
                 "depart_at": candidate.isoformat(),
-                "depart_label": candidate.astimezone().strftime("%I:%M %p"),
+                "depart_label": candidate.astimezone(IST).strftime("%I:%M %p"),
                 "weather_score": score, "score": score,
                 "level": risk_model.classify_risk_level(score),
             })
