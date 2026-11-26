@@ -12,10 +12,13 @@ envelope, not a claim that every road inside it is validated. OSM-derived
 records remain UNKNOWN / UNVERIFIED. Estimated speeds are planning assumptions,
 not measured or live traffic. No NER tables are read or modified.
 """
+import argparse
 import math
+from pathlib import Path
+
+import osmium
 import psycopg2
 import config
-from overpass_client import fetch_road_network, parse_ways_and_nodes
 
 GJ_SPEED_KMH = {
     "motorway": 80, "trunk": 65, "primary": 50, "secondary": 40,
@@ -68,9 +71,46 @@ def find_connections(ways):
     return sorted(pairs)
 
 
-def import_region(conn, region):
-    osm_data = fetch_road_network(region["bbox"], region["label"])
-    ways = parse_ways_and_nodes(osm_data)
+def load_road_ways(pbf_path, region):
+    """Read only road ways intersecting the pilot bbox from a local PBF extract."""
+    min_lat, min_lon, max_lat, max_lon = region["bbox"]
+    included = set(config.INCLUDED_HIGHWAY_TYPES)
+    ways = []
+
+    class RoadHandler(osmium.SimpleHandler):
+        def way(self, way):
+            highway = way.tags.get("highway")
+            if highway not in included:
+                return
+            coords = []
+            node_ids = []
+            intersects = False
+            for node in way.nodes:
+                if not node.location.valid():
+                    continue
+                lon, lat = float(node.lon), float(node.lat)
+                coords.append((lon, lat))
+                node_ids.append(int(node.ref))
+                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                    intersects = True
+            if len(coords) < 2 or not intersects:
+                return
+            ways.append({
+                "osm_id": int(way.id),
+                "name": way.tags.get("name"),
+                "highway_type": highway,
+                "node_ids": node_ids,
+                "coords": coords,
+            })
+
+    print(f"[{region['label']}] Reading local OSM extract: {pbf_path}", flush=True)
+    RoadHandler().apply_file(str(pbf_path), locations=True)
+    print(f"[{region['label']}] Found {len(ways)} road ways intersecting the pilot area.", flush=True)
+    return ways
+
+
+def import_region(conn, region, pbf_path):
+    ways = load_road_ways(pbf_path, region)
     if not ways:
         raise RuntimeError(f"{region['label']}: OSM returned no usable roads; this region was not changed.")
 
@@ -133,14 +173,21 @@ def import_region(conn, region):
     print("All imported rows remain status=unknown and data_status=UNVERIFIED.")
 
 
-def import_gujarat_roads():
+def import_gujarat_roads(pbf_path):
+    if not pbf_path.is_file():
+        raise FileNotFoundError(
+            f"OSM PBF extract not found: {pbf_path}\n"
+            "Download western-zone-latest.osm.pbf from "
+            "https://download.geofabrik.de/asia/india/western-zone.html "
+            "and place it inside osm_imports."
+        )
     conn = psycopg2.connect(
         host=config.DB_HOST, port=config.DB_PORT, dbname=config.DB_NAME,
         user=config.DB_USER, password=config.DB_PASSWORD, sslmode="require",
     )
     try:
         for region in PILOT_REGIONS:
-            import_region(conn, region)
+            import_region(conn, region, pbf_path)
         print("Gujarat pilot road import complete.")
         print("Primary: Gandhinagar–Ahmedabad. Parallel test: Kamrej–Surat.")
         print("Source attribution: © OpenStreetMap contributors, ODbL.")
@@ -149,4 +196,13 @@ def import_gujarat_roads():
 
 
 if __name__ == "__main__":
-    import_gujarat_roads()
+    parser = argparse.ArgumentParser(
+        description="Import Gujarat pilot roads from a local Geofabrik OSM PBF extract."
+    )
+    parser.add_argument(
+        "--pbf",
+        default=str(Path(__file__).with_name("western-zone-latest.osm.pbf")),
+        help="Path to the Western Zone .osm.pbf file",
+    )
+    args = parser.parse_args()
+    import_gujarat_roads(Path(args.pbf).expanduser().resolve())
