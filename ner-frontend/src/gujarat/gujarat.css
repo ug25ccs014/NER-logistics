@@ -88,3 +88,28 @@
 .gj-departure-options>div{display:flex;flex-wrap:wrap;gap:6px}
 .gj-departure-options span{padding:5px 9px;border:1px solid #e58b35;border-radius:18px;color:#ffd49b;font-size:11px}
 .gj-departure-options span.current{border-color:#ffffff;color:#fff;background:#ffffff18}
+
+/* Keep the narrative report full-width: the generic info-card rule lays out
+   direct child divs as label/value rows, which was crushing report text. */
+.gj-route-info-card>.gj-weather-report{display:block;width:100%;min-width:0;box-sizing:border-box;overflow-wrap:anywhere}
+.gj-weather-report>strong,.gj-weather-report>b{display:block;text-align:left}
+.gj-weather-report ul{display:block;padding-left:19px;margin:7px 0 12px}
+.gj-weather-report li{display:list-item;overflow-wrap:anywhere}
+.gj-weather-report .gj-weather-confidence{display:block;width:auto;text-align:left;line-height:1.5}
+.gj-weather-report .gj-departure-suggestion{display:block;width:auto;line-height:1.5;overflow-wrap:anywhere}
+.gj-weather-report .gj-departure-options{display:block;width:100%;min-width:0}
+.gj-weather-report .gj-departure-options>div{display:flex;flex-wrap:wrap;gap:7px}
+.gj-weather-report .gj-departure-options span{white-space:normal;max-width:100%;overflow-wrap:anywhere}
+
+/* Honest inventory status: show the actual imported count and suppress
+   meaningless zero-filled coverage grids when no roads are loaded. */
+.gj-route-info-card>.gj-coverage-status{display:block;min-width:0;width:100%;box-sizing:border-box}
+.gj-coverage-status-main{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #edf1ef}
+.gj-coverage-status-main span{font-size:12px;color:#71878b}
+.gj-coverage-status-main b{font-size:18px;color:#294c55}
+.gj-coverage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.gj-coverage-grid>div{display:grid;gap:4px;min-width:0;padding-top:9px;border-top:1px solid #edf1ef}
+.gj-coverage-grid span{font-size:11px;color:#71878b;text-align:left}
+.gj-coverage-grid b{font-size:13px;color:#294c55;text-align:left;overflow-wrap:anywhere}
+.gj-coverage-explanation{margin:10px 0 0;padding:10px 12px;border-radius:8px;background:#fff8eb;color:#806b4e;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+@media(max-width:620px){.gj-coverage-grid{grid-template-columns:1fr}}
