@@ -134,6 +134,97 @@ def gujarat_road_route(
     return result
 
 
+
+class RoutePointIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+
+
+class RouteIntelligenceIn(BaseModel):
+    points: list[RoutePointIn] = Field(min_length=1, max_length=80)
+
+
+@router.post("/roadways/route-intelligence")
+def gujarat_route_intelligence(body: RouteIntelligenceIn, current: dict = Depends(current_account)):
+    """Match an externally calculated route to Gujarat's own road inventory.
+
+    This is deliberately read-only. Missing road/risk data is returned as
+    unavailable rather than being converted into a zero-risk score.
+    """
+    matched = []
+    seen = set()
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            for index, point in enumerate(body.points):
+                cur.execute("""
+                    SELECT s.id, s.name, s.corridor, s.status, s.data_status,
+                           s.source_name, s.last_verified_at,
+                           ST_Distance(
+                               s.geom::geography,
+                               ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+                           ) AS distance_m,
+                           r.risk_score, r.risk_level, r.computed_at
+                    FROM gujarat_road_segments s
+                    LEFT JOIN LATERAL (
+                        SELECT risk_score, risk_level, computed_at
+                        FROM gujarat_risk_scores
+                        WHERE segment_id = s.id
+                        ORDER BY computed_at DESC
+                        LIMIT 1
+                    ) r ON TRUE
+                    WHERE ST_DWithin(
+                        s.geom::geography,
+                        ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
+                        300
+                    )
+                    ORDER BY s.geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+                    LIMIT 1
+                """, (point.lon, point.lat, point.lon, point.lat, point.lon, point.lat))
+                row = cur.fetchone()
+                if not row:
+                    matched.append({"point_index": index, "matched": False, "reason": "No Gujarat road segment within 300 m."})
+                    continue
+                (segment_id, name, corridor, status, data_status, source_name,
+                 last_verified_at, distance_m, risk_score, risk_level, computed_at) = row
+                sid = int(segment_id)
+                item = {
+                    "point_index": index, "matched": True, "segment_id": sid,
+                    "name": name, "corridor": corridor, "status": status,
+                    "data_status": data_status, "source_name": source_name,
+                    "last_verified_at": last_verified_at,
+                    "distance_m": round(float(distance_m), 1) if distance_m is not None else None,
+                    "risk_score": float(risk_score) if risk_score is not None else None,
+                    "risk_level": risk_level, "risk_computed_at": computed_at,
+                }
+                matched.append(item)
+                seen.add(sid)
+    finally:
+        conn.close()
+
+    unique = {}
+    for item in matched:
+        if item.get("matched"):
+            unique[item["segment_id"]] = item
+    scored = [x for x in unique.values() if x["risk_score"] is not None]
+    verified = [x for x in unique.values() if x["data_status"] == "VERIFIED"]
+    blocked = [x for x in unique.values() if str(x["status"] or "").lower() == "blocked"]
+    return {
+        "region": "GUJARAT",
+        "points_checked": len(body.points),
+        "points_matched": sum(1 for x in matched if x.get("matched")),
+        "unique_segments_matched": len(unique),
+        "segments_with_risk_scores": len(scored),
+        "verified_segments_matched": len(verified),
+        "blocked_segments_matched": len(blocked),
+        "segments": list(unique.values()),
+        "point_matches": matched,
+        "risk_coverage": "AVAILABLE" if scored else "UNAVAILABLE",
+        "hazard_coverage": "NOT_CONNECTED",
+        "note": "This endpoint reports only Gujarat road-inventory matches and stored Gujarat risk scores. It does not infer missing risk, terrain, or field-hazard data.",
+    }
+
+
 @router.get("/waterways")
 def gujarat_waterways(current: dict = Depends(current_account)):
     return _fetch_all("""
