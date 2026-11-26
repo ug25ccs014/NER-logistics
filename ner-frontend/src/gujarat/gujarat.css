@@ -127,3 +127,15 @@
 .gj-map-layer-controls button:focus-visible{outline:3px solid #e2b52e;outline-offset:2px}
 .gj-map-layer-note{margin:0 0 10px;color:#71878b;font-size:11px;line-height:1.5}
 @media(max-width:620px){.gj-map-layer-controls{display:grid;grid-template-columns:1fr}.gj-map-layer-controls button{width:100%;text-align:left}}
+
+
+/* Official GIS road cross-reference: separate from verification status. */
+.gj-official-reference{display:block;width:100%;box-sizing:border-box;margin:12px 0;padding:11px 12px;border:1px solid #cbdce8;border-radius:9px;background:#f3f8fc;color:#35566c;font-size:12px;line-height:1.5}
+.gj-official-reference>strong{display:block;text-align:left;color:#244b66;margin-bottom:5px}
+.gj-official-reference>p{margin:0 0 7px;overflow-wrap:anywhere}
+.gj-official-reference>small{display:block;margin-top:8px;color:#617d8e;overflow-wrap:anywhere}
+.gj-official-reference a{color:#176b9b;text-decoration:underline}
+.gj-official-feature-list{display:grid;gap:6px;margin-top:8px}
+.gj-official-feature-list>div{display:grid;gap:2px;padding:7px 0;border-top:1px solid #dce8ef}
+.gj-official-feature-list b,.gj-official-feature-list span{text-align:left;overflow-wrap:anywhere}
+.gj-official-feature-list span,.gj-official-feature-list small{font-size:11px;color:#617d8e}
