@@ -97,14 +97,23 @@ function weatherRiskColor(score) {
 }
 function buildWeatherSections(route, points) {
   if (!route?.coords?.length || !points?.length) return [];
-  const ordered = [...points].filter(p => Number.isFinite(Number(p.index))).sort((a, b) => Number(a.index) - Number(b.index));
-  return ordered.slice(0, -1).map((point, i) => {
-    const next = ordered[i + 1];
-    const from = Math.max(0, Math.min(route.coords.length - 1, Number(point.index)));
-    const to = Math.max(from + 1, Math.min(route.coords.length - 1, Number(next.index)));
-    const score = Math.max(Number(point.weather_score ?? point.risk_score ?? 0), Number(next.weather_score ?? next.risk_score ?? 0));
-    return { id: String(i), coords: route.coords.slice(from, to + 1), score, color: weatherRiskColor(score) };
-  }).filter(section => section.coords.length > 1);
+  // Only draw a coloured road stretch when both its route position and a real
+  // numeric forecast score are present. Missing forecasts are never painted green.
+  const ordered = [...points]
+    .filter(p => Number.isInteger(Number(p.index)) &&
+      Number(p.index) >= 0 && Number(p.index) < route.coords.length &&
+      Number.isFinite(Number(p.weather_score ?? p.risk_score)))
+    .sort((a, b) => Number(a.index) - Number(b.index));
+  const sections = [];
+  for (let i = 0; i < ordered.length - 1; i++) {
+    const point = ordered[i], next = ordered[i + 1];
+    const from = Number(point.index), to = Number(next.index);
+    if (to <= from) continue;
+    const score = Math.max(Number(point.weather_score ?? point.risk_score), Number(next.weather_score ?? next.risk_score));
+    const coords = route.coords.slice(from, to + 1);
+    if (coords.length > 1) sections.push({ id: String(i), coords, score, level: score >= 75 ? 'Severe' : score >= 55 ? 'High' : score >= 30 ? 'Moderate' : 'Low', color: weatherRiskColor(score) });
+  }
+  return sections;
 }
 
 function loadSaved() {
@@ -389,7 +398,10 @@ export default function RouteRidePage() {
           {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
           {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
           {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
-          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <Polyline key={'weather-' + section.id} positions={section.coords} pathOptions={{ color: section.color, weight: 9, opacity: 1, lineCap: 'round', lineJoin: 'round' }} />)}
+          {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.mapSections || []).map(section => <React.Fragment key={'weather-' + section.id}>
+            <Polyline positions={section.coords} pathOptions={{ color: '#ffffff', weight: 12, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />
+            <Polyline positions={section.coords} pathOptions={{ color: section.color, weight: 8, opacity: 1, lineCap: 'round', lineJoin: 'round' }} />
+          </React.Fragment>)}
           {weather && selectedRoute && weather.routeId === selectedRoute.id && (weather.scored || []).filter(point => Number.isInteger(Number(point.index)) && selectedRoute.coords[Number(point.index)]).map((point, i) => {
             const score = Number(point.weather_score ?? point.risk_score);
             return <CircleMarker key={'weather-checkpoint-' + i} center={selectedRoute.coords[Number(point.index)]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: weatherRiskColor(score), fillOpacity: 1 }}><Popup><strong>Weather checkpoint {i + 1}</strong><br/>Weather risk: {Number.isFinite(score) ? score.toFixed(0) + '/100' : 'Unavailable'}<br/>Rain: {point.forecast_rain_1h_mm ?? 'n/a'} mm/h<br/>Wind: {point.forecast_wind_kmh ?? 'n/a'} km/h<br/>Forecast: {point.provider || (point.sources || []).join(', ') || 'External provider'}</Popup></CircleMarker>;
@@ -397,7 +409,7 @@ export default function RouteRidePage() {
           {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
           {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
-        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Weather risk: <i style={{background:"#20a36b"}}></i> Low · <i style={{background:"#e2b52e"}}></i> Moderate · <i style={{background:"#ed7d24"}}></i> High · <i style={{background:"#dc3f3f"}}></i> Severe</span></div>
+        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span className="gj-risk-legend"><b>Forecast road risk</b><i style={{background:"#20a36b"}}></i> Low (0–29) <i style={{background:"#e2b52e"}}></i> Moderate (30–54) <i style={{background:"#ed7d24"}}></i> High (55–74) <i style={{background:"#dc3f3f"}}></i> Severe (75–100)</span></div>
       </section>
     </div>
     <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. Route colours show weather-only forecast risk where forecast data is available; they do not represent a complete road-safety score.</p>
