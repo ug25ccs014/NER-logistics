@@ -155,7 +155,7 @@ def gujarat_route_terrain_profile(body: TerrainProfileIn, current: dict = Depend
     try:
         return {
             "region": "GUJARAT",
-            **build_terrain_profile([point.model_dump() for point in body.points]),
+            **build_terrain_profile([point.dict() for point in body.points]),
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
