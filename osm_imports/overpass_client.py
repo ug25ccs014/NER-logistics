@@ -13,14 +13,22 @@ import config
 
 # Approximately 11 km north-south by 10 km east-west at Gujarat latitudes.
 # A small overlap avoids edge omissions; duplicate OSM elements are merged.
-TILE_LAT_DEG = 0.10
-TILE_LON_DEG = 0.10
+TILE_LAT_DEG = 0.05
+TILE_LON_DEG = 0.05
 TILE_OVERLAP_DEG = 0.002
-OVERPASS_QUERY_TIMEOUT_SEC = 90
-HTTP_CONNECT_TIMEOUT_SEC = 15
-HTTP_READ_TIMEOUT_SEC = 120
-REQUEST_PAUSE_SEC = 1.5
-MAX_ATTEMPTS = 2
+OVERPASS_QUERY_TIMEOUT_SEC = 180
+HTTP_CONNECT_TIMEOUT_SEC = 20
+HTTP_READ_TIMEOUT_SEC = 240
+REQUEST_PAUSE_SEC = 2.0
+MAX_ATTEMPTS_PER_SERVER = 2
+
+# Use the configured endpoint first, then try independent global mirrors.
+# Public instances are best-effort; never send parallel requests.
+FALLBACK_OVERPASS_URLS = [
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+]
 
 
 def build_query(bbox):
@@ -64,42 +72,50 @@ def fetch_tile(bbox, label, tile_number, total_tiles):
     headers = {
         "User-Agent": "NER-Logistics-Hackathon-Project/1.0 (educational hackathon use)"
     }
-    last_error = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            print(
-                f"[{label}] Fetching tile {tile_number}/{total_tiles} "
-                f"(attempt {attempt}/{MAX_ATTEMPTS}): {bbox}",
-                flush=True,
-            )
-            response = requests.post(
-                config.OVERPASS_URL,
-                data={"data": query},
-                headers=headers,
-                timeout=(HTTP_CONNECT_TIMEOUT_SEC, HTTP_READ_TIMEOUT_SEC),
-            )
-            response.raise_for_status()
-            data = response.json()
-            print(
-                f"[{label}] Tile {tile_number}/{total_tiles}: "
-                f"{len(data.get('elements', []))} OSM elements received.",
-                flush=True,
-            )
-            return data.get("elements", [])
-        except (requests.RequestException, ValueError) as exc:
-            last_error = exc
-            print(
-                f"[{label}] Tile {tile_number}/{total_tiles} failed: "
-                f"{type(exc).__name__}: {exc}",
-                flush=True,
-            )
-            if attempt < MAX_ATTEMPTS:
-                time.sleep(4 * attempt)
+    configured_url = config.OVERPASS_URL
+    endpoints = list(dict.fromkeys([configured_url, *FALLBACK_OVERPASS_URLS]))
+    failures = []
+
+    for endpoint_index, endpoint in enumerate(endpoints, start=1):
+        for attempt in range(1, MAX_ATTEMPTS_PER_SERVER + 1):
+            try:
+                print(
+                    f"[{label}] Fetching tile {tile_number}/{total_tiles} "
+                    f"via {endpoint} (server {endpoint_index}/{len(endpoints)}, "
+                    f"attempt {attempt}/{MAX_ATTEMPTS_PER_SERVER}): {bbox}",
+                    flush=True,
+                )
+                response = requests.post(
+                    endpoint,
+                    data={"data": query},
+                    headers=headers,
+                    timeout=(HTTP_CONNECT_TIMEOUT_SEC, HTTP_READ_TIMEOUT_SEC),
+                )
+                response.raise_for_status()
+                data = response.json()
+                print(
+                    f"[{label}] Tile {tile_number}/{total_tiles}: "
+                    f"{len(data.get('elements', []))} OSM elements received.",
+                    flush=True,
+                )
+                return data.get("elements", [])
+            except (requests.RequestException, ValueError) as exc:
+                failures.append(f"{endpoint}: {type(exc).__name__}: {exc}")
+                print(
+                    f"[{label}] Tile {tile_number}/{total_tiles} failed on "
+                    f"{endpoint}: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+                if attempt < MAX_ATTEMPTS_PER_SERVER:
+                    time.sleep(8 * attempt)
+        if endpoint_index < len(endpoints):
+            print(f"[{label}] Switching to next Overpass mirror after failure.", flush=True)
+            time.sleep(5)
+
     raise RuntimeError(
-        f"{label}: tile {tile_number}/{total_tiles} failed after "
-        f"{MAX_ATTEMPTS} attempts; stopping to avoid importing incomplete data. "
-        f"Last error: {last_error}"
-    ) from last_error
+        f"{label}: tile {tile_number}/{total_tiles} failed on all "
+        f"{len(endpoints)} Overpass endpoints. Last errors: {' | '.join(failures)}"
+    )
 
 
 def fetch_road_network(bbox, label="region"):
