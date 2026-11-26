@@ -106,6 +106,9 @@ export default function RouteRidePage() {
   const [busy, setBusy] = useState(false);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weather, setWeather] = useState(null);
+  const [roadIntelligence, setRoadIntelligence] = useState(null);
+  const [roadIntelligenceBusy, setRoadIntelligenceBusy] = useState(false);
+  const [roadIntelligenceNotice, setRoadIntelligenceNotice] = useState('Gujarat road coverage will be checked after route search.');
   const [weatherNotice, setWeatherNotice] = useState('Weather forecast will load after route search.');
   const [notice, setNotice] = useState('Enter an origin and destination to find real-road route options.');
   const [savedTrips, setSavedTrips] = useState(loadSaved);
@@ -127,6 +130,41 @@ export default function RouteRidePage() {
     );
     return () => navigator.geolocation.clearWatch(id);
   }, [watching]);
+
+
+  useEffect(() => {
+    if (!selectedRoute?.coords?.length) {
+      setRoadIntelligence(null);
+      setRoadIntelligenceNotice('Gujarat road coverage will be checked after route search.');
+      return undefined;
+    }
+    let cancelled = false;
+    setRoadIntelligence(null);
+    setRoadIntelligenceBusy(true);
+    setRoadIntelligenceNotice('Matching route points against the Gujarat road inventory…');
+    const coords = selectedRoute.coords;
+    const count = Math.min(24, coords.length);
+    const points = Array.from({ length: count }, (_, i) => {
+      const idx = Math.round(i * (coords.length - 1) / Math.max(1, count - 1));
+      return { lat: coords[idx][0], lon: coords[idx][1] };
+    });
+    api.gujaratRouteIntelligence(points)
+      .then(result => {
+        if (cancelled) return;
+        setRoadIntelligence(result);
+        setRoadIntelligenceNotice(
+          result.unique_segments_matched
+            ? 'Gujarat road inventory matched to this route.'
+            : 'No Gujarat road segments were matched within 300 m of the sampled route points.'
+        );
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setRoadIntelligenceNotice('Gujarat road matching unavailable: ' + (error.message || 'request failed'));
+      })
+      .finally(() => { if (!cancelled) setRoadIntelligenceBusy(false); });
+    return () => { cancelled = true; };
+  }, [selectedRoute]);
 
   const mapCenter = useMemo(() => gps ? [gps.lat, gps.lon] : region.center, [gps, region]);
   async function findRoutes(event) {
@@ -287,7 +325,28 @@ export default function RouteRidePage() {
           }} disabled={weatherBusy} style={{marginTop:10}}>↻ Refresh weather</button>
         </section>}
         <section className="gj-route-info-card">
-          <strong>Route intelligence</strong>
+          
+          <strong>Gujarat monitored-road coverage</strong>
+          <p style={{fontSize:12,color:'#9aa4af'}}>{roadIntelligenceBusy ? 'Checking Gujarat road inventory…' : roadIntelligenceNotice}</p>
+          {roadIntelligence && <div style={{fontSize:12,lineHeight:1.8}}>
+            <div>Route sample points matched: <b>{roadIntelligence.points_matched}/{roadIntelligence.points_checked}</b></div>
+            <div>Unique Gujarat segments: <b>{roadIntelligence.unique_segments_matched}</b></div>
+            <div>Segments with stored risk scores: <b>{roadIntelligence.segments_with_risk_scores}</b></div>
+            <div>Verified road segments: <b>{roadIntelligence.verified_segments_matched}</b></div>
+            <div>Blocked segments matched: <b>{roadIntelligence.blocked_segments_matched}</b></div>
+            <div>Stored risk coverage: <b>{roadIntelligence.risk_coverage}</b></div>
+            <div>Field-hazard coverage: <b>{roadIntelligence.hazard_coverage}</b></div>
+            {roadIntelligence.segments?.length > 0 && <div style={{marginTop:9}}>
+              <b>Matched road sections</b>
+              {roadIntelligence.segments.slice(0,8).map(segment => <div key={segment.segment_id} style={{padding:'7px 0',borderTop:'1px solid rgba(150,160,170,.25)'}}>
+                <div><b>{segment.name || 'Unnamed Gujarat road'}</b>{segment.corridor ? ' · ' + segment.corridor : ''}</div>
+                <div>{segment.status || 'Status unavailable'} · {segment.data_status || 'Data status unavailable'} · {segment.distance_m ?? '—'} m from route</div>
+                <div>Stored risk: {segment.risk_score == null ? 'Not available' : segment.risk_score.toFixed(1) + '/100 (' + (segment.risk_level || 'unclassified') + ')'}</div>
+              </div>)}
+            </div>}
+            <p style={{fontSize:11,color:'#9aa4af'}}>{roadIntelligence.note}</p>
+          </div>}
+<strong>Route intelligence</strong>
           <div><span>Fastest route</span><b>{routes.length ? Math.round(routes[0].durationMin) + ' min estimate' : 'Awaiting search'}</b></div>
           <div><span>Safest route</span><b>Requires Gujarat risk data</b></div>
           <div><span>Weather along route</span><b>MET Norway integration pending</b></div>
