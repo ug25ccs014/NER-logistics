@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -7,13 +7,45 @@ const REGIONS = {
   ahmedabad: { label: 'Ahmedabad–Gandhinagar (Primary)', center: [23.12, 72.60], zoom: 10, radius: 28000 },
   kamrej: { label: 'Kamrej, Surat (Parallel test zone)', center: [21.27, 72.96], zoom: 12, radius: 15000 },
 };
-
+const SAVED_KEY = 'gujarat_route_saved_trips_v1';
 const userIcon = L.divIcon({ className: 'gj-user-location-icon', html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] });
 
 function RecenterMap({ center, zoom }) {
   const map = useMap();
   useEffect(() => { map.setView(center, zoom, { animate: true }); }, [center, zoom, map]);
   return null;
+}
+function FitRoute({ coords }) {
+  const map = useMap();
+  useEffect(() => { if (coords?.length) map.fitBounds(L.latLngBounds(coords), { padding: [35, 35] }); }, [coords, map]);
+  return null;
+}
+async function geocode(query) {
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=' + encodeURIComponent(query + ', Gujarat, India');
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('Place search is temporarily unavailable (' + response.status + ').');
+  const results = await response.json();
+  if (!results.length) throw new Error('Could not find "' + query + '". Try a nearby town or landmark.');
+  return { lat: Number(results[0].lat), lon: Number(results[0].lon), label: results[0].display_name };
+}
+async function getRoutes(origin, destination) {
+  const url = 'https://router.project-osrm.org/route/v1/driving/' +
+    origin.lon + ',' + origin.lat + ';' + destination.lon + ',' + destination.lat +
+    '?overview=full&geometries=geojson&alternatives=3&steps=true';
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Routing service is unavailable (' + response.status + ').');
+  const data = await response.json();
+  if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No drivable route was returned for these locations.');
+  return data.routes.map((r, i) => ({
+    id: String(i),
+    coords: r.geometry.coordinates.map(([lon, lat]) => [lat, lon]),
+    distanceKm: r.distance / 1000,
+    durationMin: r.duration / 60,
+    source: 'OSRM / OpenStreetMap',
+  })).sort((a, b) => a.durationMin - b.durationMin);
+}
+function loadSaved() {
+  try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); } catch { return []; }
 }
 
 export default function RouteRidePage() {
@@ -23,50 +55,71 @@ export default function RouteRidePage() {
   const [watching, setWatching] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [notice, setNotice] = useState('Choose an origin and destination. Route calculation will activate after the regional road graph is imported and validated.');
+  const [origin, setOrigin] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [routes, setRoutes] = useState([]);
+  const [selected, setSelected] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('Enter an origin and destination to find real-road route options.');
+  const [savedTrips, setSavedTrips] = useState(loadSaved);
   const region = REGIONS[regionKey];
+  const selectedRoute = routes[selected] || null;
 
   useEffect(() => {
     if (!watching) return undefined;
-    if (!navigator.geolocation) {
-      setGpsStatus('Geolocation is not supported by this browser.');
-      setWatching(false);
-      return undefined;
-    }
-    if (!window.isSecureContext) {
-      setGpsStatus('Live GPS requires HTTPS or localhost.');
-      setWatching(false);
-      return undefined;
-    }
+    if (!navigator.geolocation) { setGpsStatus('Geolocation is not supported.'); setWatching(false); return undefined; }
+    if (!window.isSecureContext) { setGpsStatus('GPS requires HTTPS or localhost.'); setWatching(false); return undefined; }
     setGpsStatus('Waiting for GPS signal…');
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        setGps({ lat: position.coords.latitude, lon: position.coords.longitude, accuracy: position.coords.accuracy, at: new Date(position.timestamp) });
-        setGpsStatus('GPS signal received');
+    const id = navigator.geolocation.watchPosition(
+      p => {
+        const fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy, at: new Date(p.timestamp).toISOString() };
+        setGps(fix); setGpsStatus('GPS active · accuracy ±' + Math.round(fix.accuracy) + ' m');
       },
-      (error) => setGpsStatus(error.code === 1 ? 'Location permission denied.' : 'Waiting for a GPS signal. Try moving outdoors.'),
+      e => setGpsStatus(e.code === 1 ? 'Location permission denied.' : 'GPS signal unavailable. Try outdoors.'),
       { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 }
     );
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => navigator.geolocation.clearWatch(id);
   }, [watching]);
 
   const mapCenter = useMemo(() => gps ? [gps.lat, gps.lon] : region.center, [gps, region]);
-  const startGps = () => {
-    if (!watching) setWatching(true);
-    if (gps) setGpsStatus('GPS tracking active');
-  };
-
-  function requestRoute(event) {
+  async function findRoutes(event) {
     event.preventDefault();
-    setNotice('Route calculation is not enabled yet: the selected region needs a connected, validated road graph. We will connect this form to the Gujarat NetworkX routing API next; no route or ETA is being fabricated.');
+    setBusy(true); setRoutes([]); setSelected(0);
+    setNotice('Finding locations and requesting road routes…');
+    try {
+      const [a, b] = await Promise.all([geocode(from), geocode(to)]);
+      const options = await getRoutes(a, b);
+      setOrigin(a); setDestination(b); setRoutes(options);
+      setNotice('Found ' + options.length + ' route option(s). Fastest is ranked by the routing provider’s estimated duration. Traffic is not live.');
+    } catch (e) { setNotice(e.message || 'Could not calculate this route.'); }
+    finally { setBusy(false); }
+  }
+  function saveTrip() {
+    if (!selectedRoute || !origin || !destination) return;
+    const trip = {
+      id: Date.now().toString(), savedAt: new Date().toISOString(),
+      from, to, origin, destination, routes, selected,
+      regionKey,
+    };
+    const next = [trip, ...savedTrips.filter(x => !(x.from === from && x.to === to))].slice(0, 10);
+    setSavedTrips(next); localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+    setNotice('Trip saved on this device.');
+  }
+  function restoreTrip(trip) {
+    setFrom(trip.from); setTo(trip.to); setOrigin(trip.origin); setDestination(trip.destination);
+    setRoutes(trip.routes); setSelected(trip.selected || 0); setRegionKey(trip.regionKey || 'ahmedabad');
+    setNotice('Restored saved route from ' + new Date(trip.savedAt).toLocaleString('en-IN') + '. Route data may be outdated.');
+  }
+  function deleteTrip(id) {
+    const next = savedTrips.filter(t => t.id !== id);
+    setSavedTrips(next); localStorage.setItem(SAVED_KEY, JSON.stringify(next));
   }
 
   return <div className="gj-route-page">
     <div className="gj-page-heading">
-      <div><span className="gj-eyebrow">GUJARAT / ROUTE & RIDE</span><h1>Route & Ride</h1><p>Map, device GPS, weather-aware routing and trip monitoring.</p></div>
-      <span className="gj-status gj-status--regional-pilot">DEVELOPMENT PREVIEW</span>
+      <div><span className="gj-eyebrow">GUJARAT / ROUTE & RIDE</span><h1>Route & Ride</h1><p>Road routing, device GPS and saved journeys.</p></div>
+      <span className="gj-status gj-status--regional-pilot">GUJARAT PILOT</span>
     </div>
-
     <div className="gj-route-toolbar">
       <label>Development region
         <select value={regionKey} onChange={e => { setRegionKey(e.target.value); setGps(null); }}>
@@ -74,34 +127,59 @@ export default function RouteRidePage() {
         </select>
       </label>
       <div className="gj-gps-control"><span className={watching && gps ? 'gj-gps-dot active' : 'gj-gps-dot'}></span><span>{gpsStatus}</span>
-        {!watching ? <button type="button" onClick={startGps}>Use my location</button> : <button type="button" onClick={() => { setWatching(false); setGpsStatus('Location tracking stopped'); }}>Stop GPS</button>}
+        {!watching ? <button type="button" onClick={() => setWatching(true)}>Use my location</button> : <button type="button" onClick={() => { setWatching(false); setGpsStatus('Location tracking stopped'); }}>Stop GPS</button>}
       </div>
     </div>
-
     <div className="gj-route-layout">
       <section className="gj-route-map-card">
-        <div className="gj-map-heading"><div><strong>Live regional map</strong><small>{region.label}</small></div><span>© OpenStreetMap contributors</span></div>
+        <div className="gj-map-heading"><div><strong>Regional road map</strong><small>{region.label}</small></div><span>© OpenStreetMap contributors</span></div>
         <MapContainer center={region.center} zoom={region.zoom} scrollWheelZoom className="gj-live-map">
           <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <RecenterMap center={mapCenter} zoom={gps ? 14 : region.zoom} />
           <Circle center={region.center} radius={region.radius} pathOptions={{ color: '#167f78', fillColor: '#167f78', fillOpacity: 0.06, weight: 2, dashArray: '6 6' }} />
           {gps && <Marker position={[gps.lat, gps.lon]} icon={userIcon}><Popup><strong>Your device location</strong><br/>Accuracy ±{Math.round(gps.accuracy)} m</Popup></Marker>}
-          <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre (approximate)</Popup></Marker>
+          {origin && <Marker position={[origin.lat, origin.lon]}><Popup>Origin: {from}</Popup></Marker>}
+          {destination && <Marker position={[destination.lat, destination.lon]}><Popup>Destination: {to}</Popup></Marker>}
+          {routes.map((r, i) => <Polyline key={r.id} positions={r.coords} pathOptions={{ color: i === selected ? '#168b80' : '#7b8794', weight: i === selected ? 6 : 4, opacity: i === selected ? 0.95 : 0.45, dashArray: i === selected ? undefined : '7 7' }} eventHandlers={{ click: () => setSelected(i) }} />)}
+          {selectedRoute && <FitRoute coords={selectedRoute.coords} />}
+          {!origin && <Marker position={region.center}><Popup>{region.label}<br/>Pilot map centre</Popup></Marker>}
         </MapContainer>
-        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Development coverage target</span></div>
+        <div className="gj-map-legend"><span><i className="gj-legend-user"></i>Your GPS position</span><span><i className="gj-legend-zone"></i>Pilot coverage target</span><span>Selected route: teal</span></div>
       </section>
-
       <aside className="gj-route-side">
-        <form className="gj-route-search-card" onSubmit={requestRoute}>
+        <form className="gj-route-search-card" onSubmit={findRoutes}>
           <span className="gj-card-kicker">PLAN A JOURNEY</span><h2>Where do you want to go?</h2>
-          <label>Starting point<input value={from} onChange={e => setFrom(e.target.value)} placeholder="Enter starting location" required /></label>
-          <label>Destination<input value={to} onChange={e => setTo(e.target.value)} placeholder="Enter destination" required /></label>
-          <button className="gj-primary-button" type="submit">Find routes</button>
-          <p className="gj-route-notice">{notice}</p>
+          <label>Starting point<input value={from} onChange={e => setFrom(e.target.value)} placeholder="e.g. Ahmedabad" required /></label>
+          <label>Destination<input value={to} onChange={e => setTo(e.target.value)} placeholder="e.g. Gandhinagar" required /></label>
+          <button className="gj-primary-button" type="submit" disabled={busy}>{busy ? 'Finding routes…' : 'Find routes'}</button>
+          <p className="gj-route-notice" role="status">{notice}</p>
         </form>
-        <section className="gj-route-info-card"><strong>Route intelligence</strong><div><span>Fastest route</span><b>Awaiting road graph</b></div><div><span>Safest route</span><b>Awaiting risk + weather data</b></div><div><span>Weather along route</span><b>MET Norway integration next</b></div><div><span>Live ride tracking</span><b>{gps ? 'GPS fix received' : 'Not started'}</b></div></section>
+        {routes.length > 0 && <section className="gj-route-info-card">
+          <strong>Route alternatives</strong>
+          <p style={{fontSize:11,color:'#9aa4af'}}>Ranked by estimated duration · OSRM road routing · no live traffic</p>
+          {routes.map((r, i) => <button key={r.id} type="button" onClick={() => setSelected(i)} style={{display:'block',width:'100%',textAlign:'left',padding:10,marginTop:7,borderRadius:8,border:i===selected?'2px solid #168b80':'1px solid #52606d',background:i===selected?'rgba(22,139,128,.12)':'transparent',color:'inherit',cursor:'pointer'}}>
+            <b>{i === 0 ? 'Fastest · ' : 'Alternative ' + (i + 1) + ' · '}{r.durationMin.toFixed(0)} min</b>
+            <div style={{fontSize:12,opacity:.8,marginTop:3}}>{r.distanceKm.toFixed(1)} km · estimated</div>
+          </button>)}
+          <button className="gj-primary-button" type="button" onClick={saveTrip} style={{marginTop:10}}>Save this trip</button>
+        </section>}
+        <section className="gj-route-info-card">
+          <strong>Route intelligence</strong>
+          <div><span>Fastest route</span><b>{routes.length ? Math.round(routes[0].durationMin) + ' min estimate' : 'Awaiting search'}</b></div>
+          <div><span>Safest route</span><b>Requires Gujarat risk data</b></div>
+          <div><span>Weather along route</span><b>MET Norway integration pending</b></div>
+          <div><span>GPS tracking</span><b>{gps ? 'Active' : 'Not started'}</b></div>
+          <div><span>Live traffic</span><b>Not available from current route source</b></div>
+        </section>
+        {savedTrips.length > 0 && <section className="gj-route-info-card">
+          <strong>Saved trips on this device</strong>
+          {savedTrips.map(t => <div key={t.id} style={{display:'flex',gap:6,alignItems:'center',marginTop:7}}>
+            <button type="button" onClick={() => restoreTrip(t)} style={{flex:1,textAlign:'left',background:'transparent',border:0,color:'inherit',cursor:'pointer'}}>{t.from} → {t.to}</button>
+            <button type="button" aria-label="Delete saved trip" onClick={() => deleteTrip(t.id)}>×</button>
+          </div>)}
+        </section>}
       </aside>
     </div>
-    <p className="gj-route-footnote">GPS is requested only after you select “Use my location”. Your browser may ask for permission. The map is a development view, not turn-by-turn navigation. Road coverage and live traffic are not yet connected.</p>
+    <p className="gj-route-footnote">Routes use the public OSRM demo service and OpenStreetMap data. Travel times are estimates, not live traffic predictions. Saved trips remain in this browser. GPS is requested only when you opt in. NetworkX safety ranking and MET Norway route forecasting are separate integration steps.</p>
   </div>;
 }
