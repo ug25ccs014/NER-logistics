@@ -13,7 +13,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "ner_password")
 # shared public resource -- be patient with large queries and don't
 # hammer it with repeated re-runs. If this one is overloaded, try
 # swapping in a mirror: "https://overpass.kumi.systems/api/interpreter"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
 
 # --- Test region (bounding box) ---
 # For fast iteration, this is a single ~200km bounding box instead of
