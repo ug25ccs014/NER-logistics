@@ -161,7 +161,7 @@ def gujarat_route_terrain_profile(body: TerrainProfileIn, current: dict = Depend
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         # Do not turn a provider outage into zero elevation or zero slope.
-        raise HTTPException(status_code=503, detail=f"Terrain profile unavailable: {type(exc).__name__}")
+        raise HTTPException(status_code=503, detail=f"Terrain profile unavailable: {str(exc)[:220]}")
 
 
 @router.post("/roadways/route-intelligence")
