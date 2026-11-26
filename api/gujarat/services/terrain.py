@@ -24,15 +24,33 @@ def build_terrain_profile(points):
     if len(points) > MAX_POINTS:
         raise ValueError(f"At most {MAX_POINTS} route points can be profiled.")
 
-    params = {
-        "latitude": ",".join(f"{p['lat']:.6f}" for p in points),
-        "longitude": ",".join(f"{p['lon']:.6f}" for p in points),
-    }
-    response = requests.get(ELEVATION_URL, params=params, timeout=(8, 25))
-    response.raise_for_status()
-    elevations = response.json().get("elevation")
-    if not isinstance(elevations, list) or len(elevations) != len(points):
-        raise RuntimeError("Elevation provider returned an incomplete profile.")
+    # Query small batches to avoid proxy/request-line limits on hosted backends.
+    # The provider supports up to 100 points, but 10-point batches are more robust.
+    elevations = []
+    for offset in range(0, len(points), 10):
+        batch = points[offset:offset + 10]
+        params = {
+            "latitude": ",".join(f"{p['lat']:.6f}" for p in batch),
+            "longitude": ",".join(f"{p['lon']:.6f}" for p in batch),
+        }
+        response = requests.get(ELEVATION_URL, params=params, timeout=(8, 25))
+        if not response.ok:
+            detail = ""
+            try:
+                payload = response.json()
+                detail = payload.get("reason", "") if isinstance(payload, dict) else ""
+            except ValueError:
+                detail = response.text[:160]
+            raise RuntimeError(
+                f"Elevation provider returned HTTP {response.status_code}"
+                + (f": {detail}" if detail else "")
+            )
+        payload = response.json()
+        batch_elevations = payload.get("elevation")
+        if not isinstance(batch_elevations, list) or len(batch_elevations) != len(batch):
+            raise RuntimeError("Elevation provider returned an incomplete profile.")
+        elevations.extend(batch_elevations)
+
 
     samples = []
     for index, (point, elevation) in enumerate(zip(points, elevations)):
