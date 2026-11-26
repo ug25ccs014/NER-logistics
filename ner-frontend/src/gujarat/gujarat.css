@@ -118,3 +118,12 @@
 .gj-route-info-card>.gj-weather-content{display:block!important;width:100%;min-width:0;box-sizing:border-box}
 .gj-weather-content>.gj-weather-metrics{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;width:100%;min-width:0}
 .gj-weather-content>.gj-weather-report{display:block;width:100%;min-width:0;box-sizing:border-box}
+
+
+/* Selectable Gujarat map layers */
+.gj-map-layer-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 7px}
+.gj-map-layer-controls button{border:1px solid #cbd8d8;background:#fff;color:#405d63;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:650;cursor:pointer}
+.gj-map-layer-controls button.active{background:#173b56;border-color:#173b56;color:#fff}
+.gj-map-layer-controls button:focus-visible{outline:3px solid #e2b52e;outline-offset:2px}
+.gj-map-layer-note{margin:0 0 10px;color:#71878b;font-size:11px;line-height:1.5}
+@media(max-width:620px){.gj-map-layer-controls{display:grid;grid-template-columns:1fr}.gj-map-layer-controls button{width:100%;text-align:left}}
