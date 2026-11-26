@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { api } from '../api.js';
 import 'leaflet/dist/leaflet.css';
 
 const REGIONS = {
@@ -103,6 +104,9 @@ export default function RouteRidePage() {
   const [routes, setRoutes] = useState([]);
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [weatherBusy, setWeatherBusy] = useState(false);
+  const [weather, setWeather] = useState(null);
+  const [weatherNotice, setWeatherNotice] = useState('Weather forecast will load after route search.');
   const [notice, setNotice] = useState('Enter an origin and destination to find real-road route options.');
   const [savedTrips, setSavedTrips] = useState(loadSaved);
   const region = REGIONS[regionKey];
@@ -127,13 +131,37 @@ export default function RouteRidePage() {
   const mapCenter = useMemo(() => gps ? [gps.lat, gps.lon] : region.center, [gps, region]);
   async function findRoutes(event) {
     event.preventDefault();
-    setBusy(true); setRoutes([]); setSelected(0);
+    setBusy(true); setRoutes([]); setSelected(0); setWeather(null); setWeatherNotice('Weather forecast will load after route search.');
     setNotice('Finding locations and requesting road routes…');
     try {
       const [a, b] = await Promise.all([geocode(from, regionKey), geocode(to, regionKey)]);
       const options = await getRoutes(a, b);
       setOrigin(a); setDestination(b); setRoutes(options);
       setNotice('Found ' + options.length + ' route option(s). Fastest is ranked by the routing provider’s estimated duration. Traffic is not live.');
+      // Weather is an overlay: a provider failure must never hide the road route.
+      setWeather(null); setWeatherBusy(true); setWeatherNotice('Checking forecast along the selected route…');
+      try {
+        const route = options[0];
+        const step = Math.max(1, Math.floor(route.coords.length / 18));
+        const indices = [];
+        for (let i = 0; i < route.coords.length; i += step) indices.push(i);
+        if (indices[indices.length - 1] !== route.coords.length - 1) indices.push(route.coords.length - 1);
+        const departAt = new Date();
+        const forecast = await api.forecastPoints({
+          depart_at: departAt.toISOString(),
+          chunk_minutes: Math.max(5, Math.ceil(route.durationMin / indices.length)),
+          points: indices.slice(0, 25).map((idx, index) => ({
+            lat: route.coords[idx][0], lon: route.coords[idx][1],
+            offset_min: route.durationMin * index / Math.max(1, indices.length - 1),
+            index,
+          })),
+        });
+        const scored = (forecast.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
+        setWeather({ ...forecast, scored, routeId: route.id, checkedAt: new Date().toISOString() });
+        setWeatherNotice(scored.length ? 'Route weather forecast ready. Weather-provider coverage may vary.' : 'The weather providers returned no usable forecast for these route points.');
+      } catch (weatherError) {
+        setWeatherNotice('Weather forecast unavailable: ' + (weatherError.message || 'provider error') + '. Your road route is still available.');
+      } finally { setWeatherBusy(false); }
     } catch (e) { setNotice(e.message || 'Could not calculate this route.'); }
     finally { setBusy(false); }
   }
@@ -150,7 +178,7 @@ export default function RouteRidePage() {
   }
   function restoreTrip(trip) {
     setFrom(trip.from); setTo(trip.to); setOrigin(trip.origin); setDestination(trip.destination);
-    setRoutes(trip.routes); setSelected(trip.selected || 0); setRegionKey(trip.regionKey || 'ahmedabad');
+    setRoutes(trip.routes); setSelected(trip.selected || 0); setRegionKey(trip.regionKey || 'ahmedabad'); setWeather(null); setWeatherNotice('Run Find routes to refresh weather for this saved route.');
     setNotice('Restored saved route from ' + new Date(trip.savedAt).toLocaleString('en-IN') + '. Route data may be outdated.');
   }
   function deleteTrip(id) {
@@ -205,6 +233,47 @@ export default function RouteRidePage() {
             <div style={{fontSize:12,opacity:.8,marginTop:3}}>{r.distanceKm.toFixed(1)} km · estimated</div>
           </button>)}
           <button className="gj-primary-button" type="button" onClick={saveTrip} style={{marginTop:10}}>Save this trip</button>
+        </section>}
+        {routes.length > 0 && <section className="gj-route-info-card">
+          <strong>Weather & route risk</strong>
+          <p style={{fontSize:12,color:'#9aa4af'}}>{weatherBusy ? 'Fetching weather along the route…' : weatherNotice}</p>
+          {weather?.scored?.length > 0 && (() => {
+            const worst = weather.scored.reduce((a, b) => b.risk_score > a.risk_score ? b : a);
+            const rain = Math.max(...weather.scored.map(p => Number(p.forecast_rain_1h_mm || 0)));
+            const wind = Math.max(...weather.scored.map(p => Number(p.forecast_wind_kmh || 0)));
+            const gust = Math.max(...weather.scored.map(p => Number(p.forecast_gust_kmh || 0)));
+            const visibility = Math.min(...weather.scored.map(p => Number(p.forecast_visibility_m || 999999)));
+            const sources = [...new Set(weather.scored.flatMap(p => p.sources || []))];
+            const level = String(worst.risk_level || 'unknown').toUpperCase();
+            const tone = worst.risk_score >= 75 ? '#dc5555' : worst.risk_score >= 55 ? '#e58b35' : worst.risk_score >= 30 ? '#d2ad42' : '#168b80';
+            return <div style={{marginTop:10}}>
+              <div style={{fontSize:18,fontWeight:700,color:tone}}>{level} estimated weather risk · {Number(worst.risk_score).toFixed(0)}/100</div>
+              <div style={{fontSize:12,marginTop:7,lineHeight:1.8}}>
+                <div>Peak rain: <b>{rain.toFixed(1)} mm/h</b></div>
+                <div>Wind: <b>{wind.toFixed(0)} km/h</b> · Gusts: <b>{gust.toFixed(0)} km/h</b></div>
+                <div>Minimum forecast visibility: <b>{visibility < 999999 ? (visibility / 1000).toFixed(1) + ' km' : 'Unavailable'}</b></div>
+                <div>Route points checked: <b>{weather.scored.length}</b></div>
+                <div>Sources: <b>{sources.join(' + ') || 'Provider details unavailable'}</b></div>
+              </div>
+              <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>Estimated from forecast points using the shared weather-risk model. This is not a monitored Gujarat road-condition score or a safety guarantee.</p>
+            </div>;
+          })()}
+          <button type="button" onClick={async () => {
+            if (!selectedRoute) return;
+            setWeatherBusy(true); setWeatherNotice('Refreshing route weather…');
+            try {
+              const route = selectedRoute;
+              const step = Math.max(1, Math.floor(route.coords.length / 18));
+              const indices = [];
+              for (let i = 0; i < route.coords.length; i += step) indices.push(i);
+              if (indices[indices.length - 1] !== route.coords.length - 1) indices.push(route.coords.length - 1);
+              const result = await api.forecastPoints({ depart_at: new Date().toISOString(), chunk_minutes: Math.max(5, Math.ceil(route.durationMin / indices.length)), points: indices.slice(0,25).map((idx,index) => ({lat:route.coords[idx][0],lon:route.coords[idx][1],offset_min:route.durationMin*index/Math.max(1,indices.length-1),index})) });
+              const scored = (result.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
+              setWeather({...result,scored,routeId:route.id,checkedAt:new Date().toISOString()});
+              setWeatherNotice(scored.length ? 'Weather refreshed.' : 'No usable forecast values returned.');
+            } catch (e) { setWeatherNotice('Weather refresh failed: ' + e.message); }
+            finally { setWeatherBusy(false); }
+          }} disabled={weatherBusy} style={{marginTop:10}}>↻ Refresh weather</button>
         </section>}
         <section className="gj-route-info-card">
           <strong>Route intelligence</strong>
