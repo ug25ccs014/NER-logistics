@@ -15,6 +15,7 @@ import auth
 import db
 from gujarat.services.roadways import compare_routes
 from gujarat.services.terrain import get_cached_terrain_profile
+from gujarat.services.official_roads import cross_reference_route
 
 router = APIRouter(tags=["Gujarat Logistics"])
 _bearer = HTTPBearer(auto_error=False)
@@ -162,6 +163,19 @@ def gujarat_route_terrain_profile(body: TerrainProfileIn, current: dict = Depend
     except Exception as exc:
         # Do not turn a provider outage into zero elevation or zero slope.
         raise HTTPException(status_code=503, detail=f"Terrain profile unavailable: {str(exc)[:220]}")
+
+
+@router.post("/roadways/official-reference")
+def gujarat_official_road_reference(body: RouteIntelligenceIn, current: dict = Depends(current_account)):
+    """Cross-reference route geometry with a public NIC Gujarat road GIS layer.
+
+    A GIS match corroborates road presence/classification only. It never
+    changes local data_status or represents a current condition inspection.
+    """
+    return {
+        "region": "GUJARAT",
+        **cross_reference_route([point.dict() for point in body.points]),
+    }
 
 
 @router.post("/roadways/route-intelligence")
