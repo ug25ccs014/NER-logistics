@@ -409,7 +409,7 @@ export default function RouteRidePage() {
         <section className="gj-route-info-card">
           <strong>Terrain & elevation profile</strong>
           <p style={{fontSize:12,color:'#9aa4af'}}>{terrainBusy ? 'Loading elevation samples…' : terrainNotice}</p>
-          {terrain?.routeId === selectedRoute?.id && <div className="gj-coverage-grid">
+          {terrain && selectedRoute && terrain.routeId === selectedRoute.id && <div className="gj-coverage-grid">
             <div><span>Start elevation</span><b>{terrain.start_elevation_m} m</b></div>
             <div><span>End elevation</span><b>{terrain.end_elevation_m} m</b></div>
             <div><span>Total ascent</span><b>{terrain.total_ascent_m} m</b></div>
@@ -419,7 +419,7 @@ export default function RouteRidePage() {
             <div><span>Terrain profile</span><b>{String(terrain.terrain_class || '').replace('_',' ')}</b></div>
             <div><span>Elevation samples</span><b>{terrain.valid_elevation_points}/{terrain.point_count}</b></div>
           </div>}
-          {terrain?.routeId === selectedRoute?.id && <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>
+          {terrain && selectedRoute && terrain.routeId === selectedRoute.id && <p style={{fontSize:11,color:'#9aa4af',marginTop:8}}>
             Source: {terrain.source} · {terrain.dataset} ({terrain.resolution_m} m)
           </p>}
           <p style={{fontSize:11,color:'#c69b57',marginTop:8}}>
