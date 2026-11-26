@@ -1,18 +1,33 @@
 """
-Fetches every road (of the configured classes) within a named region
-from OpenStreetMap's Overpass API. Free, no API key -- but it's a
-shared public service, so this query can take anywhere from ~30
-seconds to a few minutes for a state-sized region. Be patient.
+Fetch road geometry from OpenStreetMap in small Overpass tiles.
+
+Overpass is a shared public service. Small tiles reduce query load and make
+progress visible; a failed tile stops the import instead of silently producing
+an incomplete region. Overlapping edges help retain ways near tile boundaries.
 """
+import math
+import time
+
 import requests
 import config
+
+# Approximately 11 km north-south by 10 km east-west at Gujarat latitudes.
+# A small overlap avoids edge omissions; duplicate OSM elements are merged.
+TILE_LAT_DEG = 0.10
+TILE_LON_DEG = 0.10
+TILE_OVERLAP_DEG = 0.002
+OVERPASS_QUERY_TIMEOUT_SEC = 90
+HTTP_CONNECT_TIMEOUT_SEC = 15
+HTTP_READ_TIMEOUT_SEC = 120
+REQUEST_PAUSE_SEC = 1.5
+MAX_ATTEMPTS = 2
 
 
 def build_query(bbox):
     highway_pattern = "|".join(config.INCLUDED_HIGHWAY_TYPES)
     min_lat, min_lon, max_lat, max_lon = bbox
     return f"""
-    [out:json][timeout:180];
+    [out:json][timeout:{OVERPASS_QUERY_TIMEOUT_SEC}];
     (
       way["highway"~"^({highway_pattern})$"]({min_lat},{min_lon},{max_lat},{max_lon});
     );
@@ -22,32 +37,104 @@ def build_query(bbox):
     """
 
 
-def fetch_road_network(bbox, label="region"):
+def build_tiles(bbox):
+    """Split (min_lat, min_lon, max_lat, max_lon) into overlapping tiles."""
+    min_lat, min_lon, max_lat, max_lon = bbox
+    tiles = []
+    lat = min_lat
+    while lat < max_lat:
+        tile_max_lat = min(lat + TILE_LAT_DEG, max_lat)
+        lon = min_lon
+        while lon < max_lon:
+            tile_max_lon = min(lon + TILE_LON_DEG, max_lon)
+            tile = (
+                max(min_lat, lat - TILE_OVERLAP_DEG),
+                max(min_lon, lon - TILE_OVERLAP_DEG),
+                min(max_lat, tile_max_lat + TILE_OVERLAP_DEG),
+                min(max_lon, tile_max_lon + TILE_OVERLAP_DEG),
+            )
+            tiles.append(tile)
+            lon = tile_max_lon
+        lat = tile_max_lat
+    return tiles
+
+
+def fetch_tile(bbox, label, tile_number, total_tiles):
     query = build_query(bbox)
-    print(f"Querying OpenStreetMap for all {', '.join(config.INCLUDED_HIGHWAY_TYPES)} roads in {label} "
-          f"(bounding box {bbox})...")
-    print("(Bounding-box queries are much faster than whole-state ones -- should take well under a minute.)")
     headers = {
-        # The public Overpass server rejects requests that don't
-        # identify themselves with a real User-Agent -- Python's
-        # default header looks like an anonymous bot and gets a
-        # 406 error. This is a good citizen convention for using any
-        # free public API, not something specific to this project.
         "User-Agent": "NER-Logistics-Hackathon-Project/1.0 (educational hackathon use)"
     }
-    response = requests.post(config.OVERPASS_URL, data={"data": query}, headers=headers, timeout=240)
-    response.raise_for_status()
-    data = response.json()
-    print(f"Received {len(data.get('elements', []))} raw OSM elements.")
-    return data
+    last_error = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            print(
+                f"[{label}] Fetching tile {tile_number}/{total_tiles} "
+                f"(attempt {attempt}/{MAX_ATTEMPTS}): {bbox}",
+                flush=True,
+            )
+            response = requests.post(
+                config.OVERPASS_URL,
+                data={"data": query},
+                headers=headers,
+                timeout=(HTTP_CONNECT_TIMEOUT_SEC, HTTP_READ_TIMEOUT_SEC),
+            )
+            response.raise_for_status()
+            data = response.json()
+            print(
+                f"[{label}] Tile {tile_number}/{total_tiles}: "
+                f"{len(data.get('elements', []))} OSM elements received.",
+                flush=True,
+            )
+            return data.get("elements", [])
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            print(
+                f"[{label}] Tile {tile_number}/{total_tiles} failed: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(4 * attempt)
+    raise RuntimeError(
+        f"{label}: tile {tile_number}/{total_tiles} failed after "
+        f"{MAX_ATTEMPTS} attempts; stopping to avoid importing incomplete data. "
+        f"Last error: {last_error}"
+    ) from last_error
+
+
+def fetch_road_network(bbox, label="region"):
+    tiles = build_tiles(bbox)
+    print(
+        f"Querying OpenStreetMap for {label}: {len(tiles)} tiles, "
+        f"road classes: {', '.join(config.INCLUDED_HIGHWAY_TYPES)}.",
+        flush=True,
+    )
+    # Key by (element type, OSM ID) because overlapping tiles return duplicates.
+    merged = {}
+    for index, tile in enumerate(tiles, start=1):
+        elements = fetch_tile(tile, label, index, len(tiles))
+        for element in elements:
+            key = (element.get("type"), element.get("id"))
+            if key[0] is not None and key[1] is not None:
+                merged[key] = element
+        if index < len(tiles):
+            time.sleep(REQUEST_PAUSE_SEC)
+
+    result = {"elements": list(merged.values())}
+    way_count = sum(1 for item in result["elements"] if item.get("type") == "way")
+    node_count = sum(1 for item in result["elements"] if item.get("type") == "node")
+    print(
+        f"{label}: merged {len(result['elements'])} unique OSM elements "
+        f"({way_count} ways, {node_count} nodes) from {len(tiles)} tiles.",
+        flush=True,
+    )
+    return result
 
 
 def parse_ways_and_nodes(osm_data):
     """
-    OSM returns nodes (points with lat/lon) and ways (ordered lists of
-    node IDs representing a road). This resolves ways into actual
-    coordinate lists, and returns them alongside a node-to-way index
-    used later to detect which roads connect to which.
+    Resolve OSM way node IDs into coordinates. Merged tile responses ensure
+    shared nodes and ways returned by overlapping tiles are deduplicated.
     """
     nodes = {}
     ways = []
@@ -60,14 +147,17 @@ def parse_ways_and_nodes(osm_data):
         if el["type"] == "way" and "nodes" in el:
             coords = [nodes[n] for n in el["nodes"] if n in nodes]
             if len(coords) < 2:
-                continue  # skip degenerate ways with no usable geometry
+                continue
             ways.append({
                 "osm_id": el["id"],
-                "name": el.get("tags", {}).get("name", f"Unnamed road ({el.get('tags', {}).get('highway', 'unknown')})"),
+                "name": el.get("tags", {}).get(
+                    "name",
+                    f"Unnamed road ({el.get('tags', {}).get('highway', 'unknown')})",
+                ),
                 "highway_type": el.get("tags", {}).get("highway", "unclassified"),
                 "node_ids": el["nodes"],
-                "coords": coords,  # list of (lon, lat)
+                "coords": coords,
             })
 
-    print(f"Parsed {len(ways)} usable road segments from {len(nodes)} nodes.")
+    print(f"Parsed {len(ways)} usable road segments from {len(nodes)} nodes.", flush=True)
     return ways
