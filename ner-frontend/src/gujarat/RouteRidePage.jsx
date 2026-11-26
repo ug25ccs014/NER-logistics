@@ -136,6 +136,8 @@ export default function RouteRidePage() {
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [weather, setWeather] = useState(null);
   const [roadIntelligence, setRoadIntelligence] = useState(null);
+  const [officialRoadReference, setOfficialRoadReference] = useState(null);
+  const [officialRoadReferenceBusy, setOfficialRoadReferenceBusy] = useState(false);
   const [terrain, setTerrain] = useState(null);
   const [terrainBusy, setTerrainBusy] = useState(false);
   const [terrainNotice, setTerrainNotice] = useState('Terrain profile will load after route search.');
@@ -180,6 +182,12 @@ export default function RouteRidePage() {
       const idx = Math.round(i * (coords.length - 1) / Math.max(1, count - 1));
       return { lat: coords[idx][0], lon: coords[idx][1] };
     });
+    setOfficialRoadReference(null);
+    setOfficialRoadReferenceBusy(true);
+    api.gujaratOfficialRoadReference(points)
+      .then(result => { if (!cancelled) setOfficialRoadReference(result); })
+      .catch(error => { if (!cancelled) setOfficialRoadReference({ status: 'UNAVAILABLE', message: error.message || 'GIS reference unavailable', features: [] }); })
+      .finally(() => { if (!cancelled) setOfficialRoadReferenceBusy(false); });
     api.gujaratRouteIntelligence(points)
       .then(result => {
         if (cancelled) return;
@@ -433,6 +441,23 @@ export default function RouteRidePage() {
           
           <strong>Gujarat monitored-road coverage</strong>
           <p style={{fontSize:12,color:'#9aa4af'}}>{roadIntelligenceBusy ? 'Checking Gujarat road inventory…' : roadIntelligenceNotice}</p>
+          <div className="gj-official-reference">
+            <strong>Official Gujarat GIS cross-reference</strong>
+            <p>{officialRoadReferenceBusy ? 'Cross-checking route against the public NIC Gujarat road GIS layer…'
+              : officialRoadReference?.status === 'REFERENCE_MATCHES'
+                ? officialRoadReference.feature_count + ' official GIS road feature(s) intersect the route buffer.'
+                : officialRoadReference?.status === 'NO_REFERENCE_MATCH'
+                  ? 'No road features were returned near this route by the reference layer.'
+                  : officialRoadReference?.message || 'Official GIS reference has not been checked yet.'}</p>
+            {officialRoadReference?.features?.length > 0 && <div className="gj-official-feature-list">
+              {officialRoadReference.features.slice(0, 6).map((feature, index) => <div key={feature.object_id || index}>
+                <b>{feature.name || feature.road_type}</b>
+                <span>{feature.road_type} · {feature.pavement || 'Pavement not specified'} · {feature.recorded_status || 'Status not specified'}</span>
+              </div>)}
+              {officialRoadReference.features.length > 6 && <small>Showing 6 of {officialRoadReference.features.length} returned features.</small>}
+            </div>}
+            <small>Source: <a href={officialRoadReference?.source_url || 'https://www.grammanchitragis.nic.in/grammanchitra/rest/services/NICAI/Gujarat/MapServer/3'} target="_blank" rel="noreferrer">NICAI Gujarat State GIS road layer</a>. Reference match only—not a condition inspection or verification of individual OSM segments.</small>
+          </div>
           {roadIntelligence && <div className="gj-coverage-status">
             <div className="gj-coverage-status-main">
               <span>Gujarat road segments in database</span>
