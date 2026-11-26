@@ -116,6 +116,38 @@ function buildWeatherSections(route, points) {
   return sections;
 }
 
+function makeWeatherReport(points, departureOptions = []) {
+  if (!points?.length) return null;
+  const valid = points.filter(p => Number.isFinite(Number(p.weather_score ?? p.risk_score)));
+  if (!valid.length) return null;
+  const worst = valid.reduce((a, b) => Number(b.weather_score ?? b.risk_score) > Number(a.weather_score ?? a.risk_score) ? b : a);
+  const score = Number(worst.weather_score ?? worst.risk_score);
+  const level = score >= 75 ? 'severe' : score >= 55 ? 'high' : score >= 30 ? 'moderate' : 'low';
+  const rain = Math.max(...valid.map(p => Number(p.forecast_rain_1h_mm || 0)));
+  const wind = Math.max(...valid.map(p => Number(p.forecast_wind_kmh || 0)));
+  const gust = Math.max(...valid.map(p => Number(p.forecast_gust_kmh || 0)));
+  const visibility = valid.map(p => Number(p.forecast_visibility_m)).filter(v => Number.isFinite(v) && v > 0);
+  const facts = [
+    'Peak weather risk: ' + score.toFixed(0) + '/100 (' + level + ') at route checkpoint ' + (Number(worst.index) + 1) + '.',
+    'Peak forecast rainfall: ' + rain.toFixed(1) + ' mm/h.',
+    'Maximum forecast wind: ' + wind.toFixed(0) + ' km/h; gusts up to ' + gust.toFixed(0) + ' km/h.',
+  ];
+  if (visibility.length) facts.push('Minimum forecast visibility: ' + (Math.min(...visibility) / 1000).toFixed(1) + ' km.');
+  const advice = [];
+  if (level === 'high' || level === 'severe') advice.push('Consider delaying departure if the trip is not urgent and compare later departure forecasts.');
+  if (rain >= 5) advice.push('Heavy rain is forecast. Reduce speed and never cross flooded or flowing-water stretches.');
+  if (gust >= 50) advice.push('Strong wind gusts are forecast. High-sided vehicles should take extra care.');
+  if (visibility.length && Math.min(...visibility) < 3000) advice.push('Low visibility is forecast. Reduce speed and use appropriate lights.');
+  if (!advice.length) advice.push('No major weather trigger was detected in the sampled forecast. Re-check before departure.');
+  return {
+    headline: level === 'low' ? 'Low weather risk expected' : level.charAt(0).toUpperCase() + level.slice(1) + ' weather risk expected',
+    level, score: Number(score.toFixed(1)), facts, advice,
+    confidence: 'See provider agreement',
+    confidence_note: 'This fallback summary is calculated from the returned route checkpoints.',
+    departure_options: departureOptions,
+  };
+}
+
 function loadSaved() {
   try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); } catch { return []; }
 }
@@ -245,7 +277,7 @@ export default function RouteRidePage() {
   const mapCenter = useMemo(() => gps ? [gps.lat, gps.lon] : region.center, [gps, region]);
   async function findRoutes(event) {
     event.preventDefault();
-    setBusy(true); setRoutes([]); setSelected(0); setWeather(null); setWeatherNotice('Weather forecast will load after route search.');
+    setBusy(true); setRoutes([]); setSelected(0); setMapLayer('weather'); setWeather(null); setWeatherNotice('Weather forecast will load after route search.');
     setNotice('Finding locations and requesting road routes…');
     try {
       const [a, b] = await Promise.all([geocode(from, regionKey), geocode(to, regionKey)]);
@@ -271,7 +303,7 @@ export default function RouteRidePage() {
           })),
         });
         const scored = (forecast.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
-        setWeather({ ...forecast, scored, mapSections: buildWeatherSections(route, scored), routeId: route.id, checkedAt: new Date().toISOString() });
+        setWeather({ ...forecast, scored, weather_report: forecast.weather_report || makeWeatherReport(scored, forecast.departure_options), mapSections: buildWeatherSections(route, scored), routeId: route.id, checkedAt: new Date().toISOString() });
         setWeatherNotice(scored.length ? 'Route weather forecast ready. Weather-provider coverage may vary.' : 'The weather providers returned no usable forecast for these route points.');
       } catch (weatherError) {
         setWeatherNotice('Weather forecast unavailable: ' + (weatherError.message || 'provider error') + '. Your road route is still available.');
@@ -328,7 +360,7 @@ export default function RouteRidePage() {
           <strong>Route alternatives</strong>
           <p style={{fontSize:11,color:'#9aa4af'}}>Ranked by estimated duration · OSRM road routing · no live traffic</p>
           {routes.map((r, i) => <button key={r.id} type="button" onClick={async () => {
-            setSelected(i);
+            setSelected(i); setMapLayer('weather');
             if (weather?.routeId === r.id || weatherBusy) return;
             setWeatherBusy(true); setWeatherNotice('Fetching forecast for this alternative…');
             try {
@@ -345,7 +377,7 @@ export default function RouteRidePage() {
                 })),
               });
               const scored = (result.points || []).filter(p => p.risk_score !== null && p.risk_score !== undefined);
-              setWeather({ ...result, scored, mapSections: buildWeatherSections(r, scored), routeId: r.id, checkedAt: new Date().toISOString() });
+              setWeather({ ...result, scored, weather_report: result.weather_report || makeWeatherReport(scored, result.departure_options), mapSections: buildWeatherSections(r, scored), routeId: r.id, checkedAt: new Date().toISOString() });
               setWeatherNotice(scored.length ? 'Forecast ready for this alternative.' : 'No usable forecast values returned.');
             } catch (error) { setWeatherNotice('Forecast unavailable: ' + error.message); }
             finally { setWeatherBusy(false); }
