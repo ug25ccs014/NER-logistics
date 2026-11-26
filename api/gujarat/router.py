@@ -14,6 +14,7 @@ from typing import Optional
 import auth
 import db
 from gujarat.services.roadways import compare_routes
+from gujarat.services.terrain import build_terrain_profile
 
 router = APIRouter(tags=["Gujarat Logistics"])
 _bearer = HTTPBearer(auto_error=False)
@@ -142,6 +143,25 @@ class RoutePointIn(BaseModel):
 
 class RouteIntelligenceIn(BaseModel):
     points: list[RoutePointIn] = Field(min_length=1, max_length=80)
+
+
+class TerrainProfileIn(BaseModel):
+    points: list[RoutePointIn] = Field(min_length=2, max_length=80)
+
+
+@router.post("/roadways/terrain-profile")
+def gujarat_route_terrain_profile(body: TerrainProfileIn, current: dict = Depends(current_account)):
+    """Return an indicative elevation/slope profile for a supplied route."""
+    try:
+        return {
+            "region": "GUJARAT",
+            **build_terrain_profile([point.model_dump() for point in body.points]),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        # Do not turn a provider outage into zero elevation or zero slope.
+        raise HTTPException(status_code=503, detail=f"Terrain profile unavailable: {type(exc).__name__}")
 
 
 @router.post("/roadways/route-intelligence")
