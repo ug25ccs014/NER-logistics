@@ -20,13 +20,56 @@ function FitRoute({ coords }) {
   useEffect(() => { if (coords?.length) map.fitBounds(L.latLngBounds(coords), { padding: [35, 35] }); }, [coords, map]);
   return null;
 }
-async function geocode(query) {
-  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=' + encodeURIComponent(query + ', Gujarat, India');
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const current = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = current;
+    }
+  }
+  return row[b.length];
+}
+async function geocode(query, regionKey) {
+  const region = REGIONS[regionKey];
+  const [lat, lon] = region.center;
+  // Bound search to the selected Gujarat pilot area. Never silently accept
+  // a distant fuzzy match (e.g. Vadodara for a misspelled Gandhinagar).
+  const latSpan = region.radius / 111000 * 1.35;
+  const lonSpan = region.radius / (102000 * Math.cos(lat * Math.PI / 180)) * 1.35;
+  const params = new URLSearchParams({
+    format: 'jsonv2', addressdetails: '1', limit: '8', countrycodes: 'in',
+    bounded: '1',
+    viewbox: [lon - lonSpan, lat + latSpan, lon + lonSpan, lat - latSpan].join(','),
+    q: query + ', Gujarat, India',
+  });
+  const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
+    headers: { Accept: 'application/json' },
+  });
   if (!response.ok) throw new Error('Place search is temporarily unavailable (' + response.status + ').');
   const results = await response.json();
-  if (!results.length) throw new Error('Could not find "' + query + '". Try a nearby town or landmark.');
-  return { lat: Number(results[0].lat), lon: Number(results[0].lon), label: results[0].display_name };
+  if (!results.length) throw new Error('Could not find "' + query + '" inside the selected Gujarat pilot area. Check the spelling or choose a nearby landmark.');
+  const wanted = query.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const ranked = results.map(item => {
+    const address = item.address || {};
+    const locality = [address.city, address.town, address.village, address.municipality, address.suburb, address.county]
+      .filter(Boolean).join(' ').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const name = String(item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const best = [locality, name].filter(Boolean).reduce((v, candidate) => Math.min(v, editDistance(wanted, candidate)), Infinity);
+    return { item, distance: best };
+  }).sort((a, b) => a.distance - b.distance);
+  const best = ranked[0];
+  if (!best || best.distance > Math.max(2, Math.floor(wanted.length * 0.22))) {
+    const choices = ranked.slice(0, 3).map(x => x.item.display_name).join(' / ');
+    throw new Error('The place search could not confidently match "' + query + '" in this region. Possible matches: ' + choices + '. Please enter a more specific locality.');
+  }
+  return {
+    lat: Number(best.item.lat), lon: Number(best.item.lon),
+    label: best.item.display_name,
+    matchedName: best.item.name || query,
+  };
 }
 async function getRoutes(origin, destination) {
   const url = 'https://router.project-osrm.org/route/v1/driving/' +
@@ -87,7 +130,7 @@ export default function RouteRidePage() {
     setBusy(true); setRoutes([]); setSelected(0);
     setNotice('Finding locations and requesting road routes…');
     try {
-      const [a, b] = await Promise.all([geocode(from), geocode(to)]);
+      const [a, b] = await Promise.all([geocode(from, regionKey), geocode(to, regionKey)]);
       const options = await getRoutes(a, b);
       setOrigin(a); setDestination(b); setRoutes(options);
       setNotice('Found ' + options.length + ' route option(s). Fastest is ranked by the routing provider’s estimated duration. Traffic is not live.');
