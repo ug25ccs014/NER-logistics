@@ -50,7 +50,7 @@
 @media(max-width:620px){.gj-route-toolbar{align-items:stretch;flex-direction:column}.gj-route-toolbar select{width:100%;min-width:0;box-sizing:border-box}.gj-gps-control{flex-wrap:wrap}.gj-live-map{height:390px}.gj-map-heading{align-items:flex-start;gap:8px}.gj-map-heading>span{max-width:130px;text-align:right}}
 
 /* Route weather panel: prevent the info-card flex row rule from squeezing metric text. */
-.gj-weather-metrics{display:grid;grid-template-columns:1fr;gap:7px;margin-top:7px;font-size:12px;line-height:1.65;min-width:0}
+.gj-route-info-card>.gj-weather-metrics{display:grid;grid-template-columns:1fr;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:7px;margin-top:7px;font-size:12px;line-height:1.65;min-width:0}
 .gj-weather-metrics>div{display:block;min-width:0;overflow-wrap:anywhere}
 .gj-weather-metrics b{display:inline;text-align:left;overflow-wrap:anywhere}
 .gj-weather-section-list{display:grid;gap:8px;margin-top:14px;min-width:0}
