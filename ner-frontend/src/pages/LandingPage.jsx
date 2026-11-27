@@ -28,7 +28,7 @@ export default function LandingPage() {
       <div className="landing-noise" />
       <nav className="landing-nav">
         <Link to="/" className="brand-lockup">
-          <span className="brand-mark">NER</span>
+          <span className="brand-mark">EZ</span>
           <span><strong>{t('brand_name')}</strong><small>{t('brand_tagline')}</small></span>
         </Link>
         <div className="landing-nav-right">

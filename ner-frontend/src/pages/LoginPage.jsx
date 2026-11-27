@@ -96,7 +96,7 @@ export default function LoginPage() {
       <div className="auth-layout">
         <motion.div className="auth-visual" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .7 }}>
           <Link to="/" className="brand-lockup auth-brand">
-            <span className="brand-mark">NER</span><span><strong>{t('brand_name')}</strong><small>{t('brand_tagline')}</small></span>
+            <span className="brand-mark">EZ</span><span><strong>{t('brand_name')}</strong><small>{t('brand_tagline')}</small></span>
           </Link>
           <div className="auth-visual-copy">
             <div className="eyebrow"><span className="pulse-dot" /> {t('login_field_network')}</div>

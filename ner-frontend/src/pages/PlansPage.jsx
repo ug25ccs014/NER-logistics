@@ -124,7 +124,7 @@ export default function PlansPage() {
     <div className="plans-page">
       <header className="plans-top">
         <button type="button" className="plans-back" onClick={goBack} aria-label="Back to dashboard">← Dashboard</button>
-        <Link to="/app" className="plans-brand">NER Logistics</Link>
+        <Link to="/app" className="plans-brand">EZ Logistics</Link>
       </header>
 
       <main className="plans-main">
@@ -189,7 +189,7 @@ export default function PlansPage() {
           <h2>Pilots, integration and data services</h2>
           <div className="plans-ent-grid">
             {ENTERPRISE_OFFERS.map((o) => (
-              <a key={o.title} className="plans-ent-card" href={`mailto:?subject=${encodeURIComponent('NER Logistics: ' + o.title)}`}>
+              <a key={o.title} className="plans-ent-card" href={`mailto:?subject=${encodeURIComponent('EZ Logistics: ' + o.title)}`}>
                 <strong>{o.price}</strong>
                 <span className="plans-ent-title">{o.title}</span>
                 <span className="plans-ent-text">{o.text}</span>

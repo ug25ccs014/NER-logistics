@@ -9,7 +9,7 @@ export default function RoleLogin() {
   return (
     <div className="role-overlay">
       <div className="role-card">
-        <h2>🛣️ NER Logistics Intelligence</h2>
+        <h2>🛣️ EZ Logistics Intelligence</h2>
         <div className="subtitle">{t('role_prompt')}</div>
         <button className="role-btn" onClick={() => setRole('driver')}>
           <span className="role-name">🚚 {t('role_driver')}</span>

@@ -1,4 +1,4 @@
-/* NER Logistics service worker -- lets the app open and show saved data with no signal.
+/* EZ Logistics service worker -- lets the app open and show saved data with no signal.
  *
  * Strategy
  *  - App shell (HTML):   network-first (fresh when online), cached copy when offline.

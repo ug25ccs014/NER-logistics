@@ -24,7 +24,7 @@ const UI_STRINGS = {
   pending_sync: { en: 'pending sync', hi: 'सिंक होना बाकी', as: 'ছিংক বাকী আছে' },
 
   // ---- Landing page ----
-  brand_name: { en: 'NER Logistics Intelligence', hi: 'एनईआर लॉजिस्टिक्स इंटेलिजेंस', as: 'এনইআৰ লজিষ্টিক ইণ্টেলিজেন্স' },
+  brand_name: { en: 'EZ Logistics Intelligence', hi: 'ईज़ी लॉजिस्टिक्स इंटेलिजेंस', as: 'ইজি লজিষ্টিক ইণ্টেলিজেন্স' },
   sign_in: { en: 'Sign in', hi: 'साइन इन करें', as: 'ছাইন ইন কৰক' },
   eyebrow: { en: 'AI + GIS for North East India', hi: 'पूर्वोत्तर भारत के लिए AI + GIS', as: 'উত্তৰ-পূৰ্ব ভাৰতৰ বাবে AI + GIS' },
   hero_title_start: { en: 'Keep essential goods moving through', hi: 'आवश्यक वस्तुओं की आवाजाही बनाए रखें', as: 'অত্যাৱশ্যকীয় সামগ্ৰীৰ চলাচল বজাই ৰাখক' },
@@ -93,9 +93,9 @@ const UI_STRINGS = {
   },
   sign_in_create: { en: 'Sign in / Create account', hi: 'साइन इन करें / खाता बनाएं', as: 'ছাইন ইন কৰক / একাউণ্ট সৃষ্টি কৰক' },
   footer_text: {
-    en: 'NER Logistics Accessibility Intelligence Platform — built for the North Eastern Region.',
-    hi: 'एनईआर लॉजिस्टिक्स एक्सेसिबिलिटी इंटेलिजेंस प्लेटफ़ॉर्म — पूर्वोत्तर क्षेत्र के लिए बनाया गया।',
-    as: 'এনইআৰ লজিষ্টিক সুলভতা ইণ্টেলিজেন্স প্লেটফৰ্ম — উত্তৰ-পূৰ্বাঞ্চলৰ বাবে নিৰ্মিত।',
+    en: 'EZ Logistics Accessibility Intelligence Platform — built for the North Eastern Region.',
+    hi: 'ईज़ी लॉजिस्टिक्स एक्सेसिबिलिटी इंटेलिजेंस प्लेटफ़ॉर्म — पूर्वोत्तर क्षेत्र के लिए बनाया गया।',
+    as: 'ইজি লজিষ্টিক সুলভতা ইণ্টেলিজেন্স প্লেটফৰ্ম — উত্তৰ-পূৰ্বাঞ্চলৰ বাবে নিৰ্মিত।',
   },
   brand_tagline: { en: 'ACCESSIBILITY INTELLIGENCE', hi: 'सुलभता इंटेलिजेंस', as: 'সুলভতা ইণ্টেলিজেন্স' },
   landing_network_label: { en: '01 / NETWORK', hi: '०१ / नेटवर्क', as: '০১ / নেটৱৰ্ক' },
@@ -495,7 +495,7 @@ const UI_STRINGS = {
   checking_forecast: { en: 'Checking live forecast across', hi: 'लाइव पूर्वानुमान जाँचा जा रहा है', as: 'লাইভ পূৰ্বানুমান পৰীক্ষা কৰা হৈছে' },
   route_sections: { en: 'route sections...', hi: 'मार्ग खंडों पर...', as: 'পথৰ খণ্ডত...' },
   forecast_unavailable: { en: 'Forecast unavailable', hi: 'पूर्वानुमान उपलब्ध नहीं है', as: 'পূৰ্বানুমান উপলব্ধ নহয়' },
-  road_identity_description: { en: 'Every road keeps a stable NER Road ID. Unnamed roads can be identified by drivers and field teams, then verified by an authority.', hi: 'हर सड़क का एक स्थिर NER रोड ID होता है। ड्राइवर और फील्ड टीमें अनाम सड़कों की पहचान कर सकती हैं, फिर प्राधिकरण उन्हें सत्यापित करता है।', as: 'প্ৰতিটো পথৰ এটা স্থায়ী NER Road ID থাকে। চালক আৰু ক্ষেত্ৰ দলে নাম নথকা পথ চিনাক্ত কৰিব পাৰে, তাৰ পিছত কৰ্তৃপক্ষই সত্যাপন কৰে।' },
+  road_identity_description: { en: 'Every road keeps a stable Road ID. Unnamed roads can be identified by drivers and field teams, then verified by an authority.', hi: 'हर सड़क का एक स्थिर रोड ID होता है। ड्राइवर और फील्ड टीमें अनाम सड़कों की पहचान कर सकती हैं, फिर प्राधिकरण उन्हें सत्यापित करता है।', as: 'প্ৰতিটো পথৰ এটা স্থায়ী Road ID থাকে। চালক আৰু ক্ষেত্ৰ দলে নাম নথকা পথ চিনাক্ত কৰিব পাৰে, তাৰ পিছত কৰ্তৃপক্ষই সত্যাপন কৰে।' },
   local_road_name_ph: { en: 'Local/common road name', hi: 'स्थानीय/प्रचलित सड़क नाम', as: 'স্থানীয়/প্ৰচলিত পথৰ নাম' },
   road_landmark_ph: { en: 'Landmark or why this name is used (optional)', hi: 'स्थान-चिह्न या यह नाम क्यों उपयोग होता है (वैकल्पिक)', as: 'চিনাকি স্থান বা এই নাম কিয় ব্যৱহাৰ হয় (বৈকল্পিক)' },
   name_submitted_status: { en: 'Name submitted for verification.', hi: 'नाम सत्यापन के लिए भेज दिया गया।', as: 'নাম সত্যাপনৰ বাবে দাখিল কৰা হ’ল।' },

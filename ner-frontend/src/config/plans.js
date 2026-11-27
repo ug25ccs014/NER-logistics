@@ -11,7 +11,7 @@ export const PLANS = {
   free: {
     id: 'free',
     name: 'Free',
-    tagline: 'Try NER Logistics on your own trips',
+    tagline: 'Try EZ Logistics on your own trips',
     perVehicleMonthly: 0,
     priceNote: 'Free forever',
     limits: { routesPerMonth: FREE_ROUTES_PER_MONTH, sosPeople: FREE_SOS_PEOPLE },

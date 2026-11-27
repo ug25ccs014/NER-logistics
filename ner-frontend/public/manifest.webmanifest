@@ -1,6 +1,6 @@
 {
-  "name": "NER Logistics Intelligence",
-  "short_name": "NER Logistics",
+  "name": "EZ Logistics Intelligence",
+  "short_name": "EZ Logistics",
   "description": "Road risk, live weather and field reports for North East India - works offline on weak networks.",
   "start_url": "/",
   "scope": "/",

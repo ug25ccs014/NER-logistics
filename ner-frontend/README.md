@@ -1,4 +1,4 @@
-# NER Logistics Intelligence — React Frontend
+# EZ Logistics Intelligence — React Frontend
 
 This replaces `api/index.html` from the original project. It talks to
 the **same FastAPI backend** (`api/main.py`) you already have — nothing
