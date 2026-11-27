@@ -67,18 +67,43 @@ def _connect():
     return driver.connect(dsn)
 
 
+def _as_dict(obj):
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("model_dump", "dict"):
+        fn = getattr(obj, attr, None)
+        if callable(fn):
+            try:
+                return fn()
+            except Exception:
+                pass
+    return {k: v for k, v in vars(obj).items() if not k.startswith("_")} if hasattr(obj, "__dict__") else {}
+
+
 def _get(obj, *names):
+    """Find the first of `names` at the top level or one level down (e.g. {"account": {...}})."""
+    data = _as_dict(obj)
     for n in names:
-        v = obj.get(n) if isinstance(obj, dict) else getattr(obj, n, None)
-        if v is not None:
-            return v
+        if data.get(n) is not None:
+            return data[n]
+    for v in data.values():
+        inner = _as_dict(v) if not isinstance(v, (str, int, float, bool, list)) else {}
+        for n in names:
+            if inner.get(n) is not None:
+                return inner[n]
     return None
 
 
 def _account_key(account) -> str:
-    key = _get(account, "id", "account_id", "phone")
+    key = _get(account, "id", "account_id", "user_id", "phone")
     if key is None:
-        raise HTTPException(status_code=401, detail="Could not identify the account.")
+        seen = sorted(_as_dict(account).keys())
+        raise HTTPException(
+            status_code=401,
+            detail=f"billing: could not find an account id/phone in the /auth/me result (keys: {seen})",
+        )
     return str(key)
 
 
