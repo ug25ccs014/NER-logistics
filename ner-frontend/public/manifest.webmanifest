@@ -1,7 +1,7 @@
 {
   "name": "EZ Logistics Intelligence",
   "short_name": "EZ Logistics",
-  "description": "Road risk, live weather and field reports for North East India - works offline on weak networks.",
+  "description": "Road risk, live weather and field reports for India - works offline on weak networks.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
