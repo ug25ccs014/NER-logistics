@@ -54,7 +54,7 @@ export default function TopBar() {
       </div>
       <div className="topbar-right">
         <span className="plan-chip" title="Current plan">{plan.name}</span>
-        {!isManaged && planId !== 'fleet_pro' && <Link to="/plans" className="topbar-upgrade">Upgrade</Link>}
+        {!isManaged && <Link to="/plans" className="topbar-upgrade">{planId === 'free' ? 'Upgrade' : 'Manage plan'}</Link>}
         <label className="language-control app-language" title="Language">
           <span>文</span>
           <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">

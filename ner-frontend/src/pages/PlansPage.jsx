@@ -38,8 +38,9 @@ function PriceBlock({ plan, interval }) {
 }
 
 function Checkout({ plan, interval, onClose, onDone }) {
-  const { subscribe } = usePlan();
-  const [vehicles, setVehicles] = useState(1);
+  const { subscribe, subscription } = usePlan();
+  const [vehicles, setVehicles] = useState(subscription.plan === plan.id ? subscription.vehicles || 1 : 1);
+  const [savedOnServer, setSavedOnServer] = useState(true);
   const [stage, setStage] = useState('review'); // review | paying | done
   const isFlat = Boolean(plan.flatYearly);
   const unit = perVehiclePrice(plan, interval);
@@ -48,7 +49,8 @@ function Checkout({ plan, interval, onClose, onDone }) {
   const pay = async () => {
     setStage('paying');
     await new Promise((r) => setTimeout(r, 1100)); // test-mode payment
-    await subscribe({ plan: plan.id, vehicles: isFlat ? 1 : vehicles, interval: isFlat ? 'yearly' : interval });
+    const result = await subscribe({ plan: plan.id, vehicles: isFlat ? 1 : vehicles, interval: isFlat ? 'yearly' : interval });
+    setSavedOnServer(result.savedOnServer);
     setStage('done');
   };
 
@@ -65,6 +67,11 @@ function Checkout({ plan, interval, onClose, onDone }) {
           <>
             <h2>You are on {plan.name}</h2>
             <p className="plans-modal-sub">Your plan is active. New tools are unlocked on your dashboard.</p>
+            {!savedOnServer && (
+              <p className="plans-gst" style={{ color: '#B5472F' }}>
+                Could not reach the server, so this plan is saved on this device only. It will be linked to your account the next time you open the app with a connection.
+              </p>
+            )}
             <button type="button" className="plans-btn plans-btn-solid" onClick={onDone}>Go to dashboard</button>
           </>
         ) : (
@@ -105,7 +112,7 @@ function Checkout({ plan, interval, onClose, onDone }) {
 export default function PlansPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { planId, isManaged, routesUsed, routeLimit, cancel } = usePlan();
+  const { planId, isManaged, routesUsed, routeLimit, cancel, subscription } = usePlan();
   const [interval, setInterval] = useState('monthly');
   const [checkoutPlan, setCheckoutPlan] = useState(null);
 
@@ -148,12 +155,19 @@ export default function PlansPage() {
                 <PriceBlock plan={plan} interval={interval} />
 
                 {current ? (
-                  <button type="button" className="plans-btn plans-btn-current" disabled>Your current plan</button>
+                  <>
+                    <button type="button" className="plans-btn plans-btn-current" disabled>Your current plan</button>
+                    {id !== 'free' && !isManaged && (
+                      <button type="button" className="plans-btn" style={{ marginTop: 8 }} onClick={() => setCheckoutPlan(plan)}>
+                        {plan.flatYearly ? 'Renew plan' : `Change vehicles (${subscription.vehicles || 1} now)`}
+                      </button>
+                    )}
+                  </>
                 ) : id === 'free' ? (
-                  <button type="button" className="plans-btn" disabled={isManaged} onClick={cancel}>Switch to Free</button>
+                  <button type="button" className="plans-btn" disabled={isManaged} onClick={() => { if (window.confirm('Switch to the Free plan? Shipment Board and Live Dashcam AI will be locked.')) cancel(); }}>Switch to Free</button>
                 ) : (
                   <button type="button" className="plans-btn plans-btn-solid" disabled={isManaged} onClick={() => setCheckoutPlan(plan)}>
-                    Get {plan.name}
+                    {PLAN_ORDER.indexOf(id) > PLAN_ORDER.indexOf(planId) ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`}
                   </button>
                 )}
                 <p className="plan-fineprint">No commitment. Cancel anytime.</p>

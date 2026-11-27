@@ -1,31 +1,47 @@
-"""Subscription plans for the NER web app.
+"""Subscription plans for the NER web app (server-side storage).
 
-Endpoints (all need a logged-in account):
-  GET  /billing/plan             -> {plan, vehicles, interval, routes_used_this_month}
-  POST /billing/subscribe        -> body {plan, vehicles, interval}   (test mode, no real payment)
-  POST /billing/usage/route      -> counts one route search for the Free plan
+Install with two lines at the very END of api/main.py (after every route is defined):
 
-The frontend (ner-frontend/src/context/PlanContext.jsx) already calls these and
-falls back to an on-device plan while they are missing, so installing this file
-is what moves the plan from "this browser" to "this account".
+    import billing
+    billing.install(app)
 
-This file does not import your existing modules. main.py passes in two things it
-already has (see BILLING_SETUP.md):
-  get_current_account : the FastAPI dependency your /auth/me route uses
-  get_conn            : a function returning a DB-API connection (psycopg2 / psycopg)
+It finds your existing /auth/me route and reuses it to know who is logged in, and it
+creates its own two tables on first use, so nothing else needs to be wired up.
+Database: uses the DATABASE_URL environment variable (psycopg2 or psycopg).
+
+Endpoints (logged-in account required):
+  GET  /billing/plan         -> {plan, vehicles, interval, routes_used_this_month}
+  POST /billing/subscribe    -> body {plan, vehicles, interval}   (test mode, no real payment)
+  POST /billing/usage/route  -> counts one route search for the Free plan
 """
+import os
 from datetime import datetime
-from typing import Callable, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-Plan = Literal["free", "fleet", "fleet_pro", "agency"]
 FREE_ROUTES_PER_MONTH = 10
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS subscriptions (
+    account_key TEXT PRIMARY KEY,
+    plan TEXT NOT NULL DEFAULT 'free',
+    vehicles INTEGER NOT NULL DEFAULT 1,
+    billing_interval TEXT NOT NULL DEFAULT 'monthly',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS route_usage (
+    account_key TEXT NOT NULL,
+    month TEXT NOT NULL,
+    routes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_key, month)
+);
+"""
 
 
 class SubscribeBody(BaseModel):
-    plan: Plan
+    plan: Literal["free", "fleet", "fleet_pro", "agency"]
     vehicles: int = Field(1, ge=1, le=500)
     interval: Literal["monthly", "yearly"] = "monthly"
 
@@ -34,89 +50,112 @@ def _month() -> str:
     return datetime.utcnow().strftime("%Y-%m")
 
 
-def build_billing_router(get_current_account: Callable, get_conn: Callable) -> APIRouter:
+def _connect():
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        # Fall back to a connection helper in your db.py if DATABASE_URL is not set.
+        import db  # type: ignore
+        for name in ("get_conn", "get_connection", "connect", "get_db_connection"):
+            fn = getattr(db, name, None)
+            if callable(fn):
+                return fn()
+        raise RuntimeError("billing: set DATABASE_URL or expose get_conn() in db.py")
+    try:
+        import psycopg2 as driver  # type: ignore
+    except ImportError:
+        import psycopg as driver  # type: ignore
+    return driver.connect(dsn)
+
+
+def _get(obj, *names):
+    for n in names:
+        v = obj.get(n) if isinstance(obj, dict) else getattr(obj, n, None)
+        if v is not None:
+            return v
+    return None
+
+
+def _account_key(account) -> str:
+    key = _get(account, "id", "account_id", "phone")
+    if key is None:
+        raise HTTPException(status_code=401, detail="Could not identify the account.")
+    return str(key)
+
+
+def _read(key: str) -> dict:
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(SCHEMA_SQL)
+            cur.execute("SELECT plan, vehicles, billing_interval FROM subscriptions WHERE account_key = %s", (key,))
+            row = cur.fetchone()
+            cur.execute("SELECT routes FROM route_usage WHERE account_key = %s AND month = %s", (key, _month()))
+            used = cur.fetchone()
+        conn.commit()
+        plan, vehicles, interval = row if row else ("free", 1, "monthly")
+        return {"plan": plan, "vehicles": vehicles, "interval": interval,
+                "routes_used_this_month": used[0] if used else 0}
+    finally:
+        conn.close()
+
+
+def install(app: FastAPI) -> None:
+    # Reuse the existing /auth/me route to learn who is logged in.
+    me = next((r for r in app.routes if getattr(r, "path", "") in ("/auth/me", "/auth/me/")), None)
+    if me is None:
+        raise RuntimeError("billing.install: no /auth/me route found; call install(app) after your routes are defined")
+    current_account = me.endpoint
+
     router = APIRouter(prefix="/billing", tags=["billing"])
 
-    def _account_id(account) -> int:
-        # Works whether your dependency returns a dict or an object.
-        if isinstance(account, dict):
-            return account.get("id") or account["account_id"]
-        return getattr(account, "id", None) or getattr(account, "account_id")
-
-    def _role(account) -> str:
-        return account.get("role") if isinstance(account, dict) else getattr(account, "role", "")
-
-    def _read(account_id: int) -> dict:
-        conn = get_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT plan, vehicles, billing_interval FROM subscriptions WHERE account_id = %s",
-                    (account_id,),
-                )
-                row = cur.fetchone()
-                cur.execute(
-                    "SELECT routes FROM route_usage WHERE account_id = %s AND month = %s",
-                    (account_id, _month()),
-                )
-                used = cur.fetchone()
-            plan, vehicles, interval = row if row else ("free", 1, "monthly")
-            return {
-                "plan": plan,
-                "vehicles": vehicles,
-                "interval": interval,
-                "routes_used_this_month": used[0] if used else 0,
-            }
-        finally:
-            conn.close()
-
     @router.get("/plan")
-    def get_plan(account=Depends(get_current_account)):
-        return _read(_account_id(account))
+    def get_plan(account=Depends(current_account)):
+        return _read(_account_key(account))
 
     @router.post("/subscribe")
-    def subscribe(body: SubscribeBody, account=Depends(get_current_account)):
-        # Test mode: switches the plan immediately. Put the payment gateway
-        # (Razorpay) confirmation check here before the INSERT when going live.
-        account_id = _account_id(account)
-        conn = get_conn()
+    def subscribe(body: SubscribeBody, account=Depends(current_account)):
+        # Test mode. Check the payment gateway's confirmation here before saving when going live.
+        key = _account_key(account)
+        conn = _connect()
         try:
             with conn.cursor() as cur:
+                cur.execute(SCHEMA_SQL)
                 cur.execute(
                     """
-                    INSERT INTO subscriptions (account_id, plan, vehicles, billing_interval, started_at)
+                    INSERT INTO subscriptions (account_key, plan, vehicles, billing_interval, started_at)
                     VALUES (%s, %s, %s, %s, now())
-                    ON CONFLICT (account_id) DO UPDATE
+                    ON CONFLICT (account_key) DO UPDATE
                       SET plan = EXCLUDED.plan, vehicles = EXCLUDED.vehicles,
                           billing_interval = EXCLUDED.billing_interval, started_at = now()
                     """,
-                    (account_id, body.plan, body.vehicles, body.interval),
+                    (key, body.plan, body.vehicles, body.interval),
                 )
             conn.commit()
         finally:
             conn.close()
-        return _read(account_id)
+        return _read(key)
 
     @router.post("/usage/route")
-    def count_route(account=Depends(get_current_account)):
-        account_id = _account_id(account)
-        state = _read(account_id)
-        if state["plan"] == "free" and _role(account) == "driver" \
+    def count_route(account=Depends(current_account)):
+        key = _account_key(account)
+        state = _read(key)
+        role = _get(account, "role")
+        if state["plan"] == "free" and role in (None, "driver") \
                 and state["routes_used_this_month"] >= FREE_ROUTES_PER_MONTH:
             raise HTTPException(status_code=402, detail="Free plan route limit reached. Upgrade to continue.")
-        conn = get_conn()
+        conn = _connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO route_usage (account_id, month, routes) VALUES (%s, %s, 1)
-                    ON CONFLICT (account_id, month) DO UPDATE SET routes = route_usage.routes + 1
+                    INSERT INTO route_usage (account_key, month, routes) VALUES (%s, %s, 1)
+                    ON CONFLICT (account_key, month) DO UPDATE SET routes = route_usage.routes + 1
                     """,
-                    (account_id, _month()),
+                    (key, _month()),
                 )
             conn.commit()
         finally:
             conn.close()
-        return _read(account_id)
+        return _read(key)
 
-    return router
+    app.include_router(router)

@@ -40,6 +40,8 @@ export function PlanProvider({ children }) {
 
   const [subscription, setSubscription] = useState(() => readJSON(planKey, { plan: 'free' }));
   const [usage, setUsage] = useState(() => readJSON(usageKey, { month: monthKey(), routes: 0 }));
+  // true once the server has confirmed this account's plan; false = plan only lives in this browser
+  const [synced, setSynced] = useState(false);
 
   // Reload when the account changes (login / logout).
   useEffect(() => {
@@ -51,9 +53,22 @@ export function PlanProvider({ children }) {
   // Ask the server for the real plan if the billing router exists.
   useEffect(() => {
     if (!isAuthenticated || role !== 'driver') return;
+    setSynced(false);
     billingFetch('/billing/plan')
-      .then((data) => {
+      .then(async (data) => {
+        const local = readJSON(planKey, { plan: 'free' });
+        // A plan bought before the server part existed only lives in this browser:
+        // send it to the server once, so it follows the account to other devices.
+        if (data?.plan === 'free' && local.plan && local.plan !== 'free' && PLANS[local.plan]) {
+          try {
+            data = await billingFetch('/billing/subscribe', {
+              method: 'POST',
+              body: JSON.stringify({ plan: local.plan, vehicles: local.vehicles || 1, interval: local.interval || 'monthly' }),
+            });
+          } catch { /* keep local */ }
+        }
         if (data?.plan && PLANS[data.plan]) {
+          setSynced(true);
           const sub = { plan: data.plan, vehicles: data.vehicles || 1, interval: data.interval || 'monthly' };
           setSubscription(sub);
           localStorage.setItem(planKey, JSON.stringify(sub));
@@ -93,22 +108,24 @@ export function PlanProvider({ children }) {
 
   const subscribe = useCallback(async ({ plan: newPlan, vehicles = 1, interval = 'monthly' }) => {
     const sub = { plan: newPlan, vehicles, interval, startedAt: new Date().toISOString() };
+    let savedOnServer = true;
     try {
       await billingFetch('/billing/subscribe', { method: 'POST', body: JSON.stringify({ plan: newPlan, vehicles, interval }) });
-    } catch { /* no billing router yet: store on this device */ }
+    } catch { savedOnServer = false; /* server unreachable or billing not installed: keep on this device */ }
     localStorage.setItem(planKey, JSON.stringify(sub));
     setSubscription(sub);
-    return sub;
+    setSynced(savedOnServer);
+    return { ...sub, savedOnServer };
   }, [planKey]);
 
   const cancel = useCallback(async () => subscribe({ plan: 'free' }), [subscribe]);
 
   const value = useMemo(() => ({
-    planId, plan, subscription, isManaged,
+    planId, plan, subscription, isManaged, synced,
     routesUsed, routeLimit, routesLeft,
     sosLimit: plan.limits.sosPeople,
     can, canSearchRoute, recordRoute, subscribe, cancel,
-  }), [planId, plan, subscription, isManaged, routesUsed, routeLimit, routesLeft, can, canSearchRoute, recordRoute, subscribe, cancel]);
+  }), [planId, plan, subscription, isManaged, synced, routesUsed, routeLimit, routesLeft, can, canSearchRoute, recordRoute, subscribe, cancel]);
 
   return <PlanContext.Provider value={value}>{children}</PlanContext.Provider>;
 }

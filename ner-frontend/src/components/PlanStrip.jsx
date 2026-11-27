@@ -4,7 +4,7 @@ import { usePlan } from '../context/PlanContext.jsx';
 
 // Home-screen strip: current plan, free usage meter and the Upgrade button.
 export default function PlanStrip() {
-  const { plan, planId, isManaged, routesUsed, routeLimit, sosLimit } = usePlan();
+  const { plan, planId, isManaged, routesUsed, routeLimit, sosLimit, subscription, synced } = usePlan();
 
   if (isManaged) {
     return (
@@ -31,12 +31,15 @@ export default function PlanStrip() {
             </div>
           </>
         ) : (
-          <span className="plan-strip-sub">Unlimited routes and SOS contacts.</span>
+          <span className="plan-strip-sub">
+            Unlimited routes and SOS contacts{planId !== 'agency' && subscription.vehicles ? ` · ${subscription.vehicles} vehicle${subscription.vehicles > 1 ? 's' : ''}` : ''}.
+          </span>
+        )}
+        {!synced && planId !== 'free' && (
+          <span className="plan-strip-sub" style={{ color: '#B5472F' }}>This plan is saved on this device only. It is not linked to your account yet.</span>
         )}
       </div>
-      {planId !== 'fleet_pro' && (
-        <Link to="/plans" className="plan-strip-btn">Upgrade plan</Link>
-      )}
+      <Link to="/plans" className="plan-strip-btn">{planId === 'free' ? 'Upgrade plan' : 'Manage plan'}</Link>
     </div>
   );
 }

@@ -23,7 +23,8 @@ SEVERE_RISK_CUTOFF = 85
 # ------------------------------------------------------------------
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-dev-secret-before-deploying")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+# 168 h = 7 days. If JWT_EXPIRE_HOURS is set in the Render/Vercel dashboard it OVERRIDES this default.
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "168"))
 
 # Shared "org passkey" gate for the two privileged roles. Anyone can
 # register as a driver with just a phone + password; registering as a

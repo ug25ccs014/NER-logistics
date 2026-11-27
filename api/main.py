@@ -1266,3 +1266,5 @@ def get_route(
         raise HTTPException(status_code=404, detail="No route found between these segments.")
 
     return {"fastest": fastest, "safest": safest}
+import billing
+billing.install(app)
