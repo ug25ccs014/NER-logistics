@@ -6,6 +6,7 @@ import { LanguageProvider } from './context/LanguageContext.jsx';
 import { flushQueue } from './utils/offlineQueue.js';
 import OfflineStatus from './components/OfflineStatus.jsx';
 import './styles/theme.css';
+import './styles/plans.css';
 
 // Send anything captured while offline as soon as we have a connection
 // -- on first load (in case the tab was left open through a dead zone)

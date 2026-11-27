@@ -1,12 +1,15 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { usePlan } from '../context/PlanContext.jsx';
 
 export default function TopBar() {
   const { role, roleLabel, name, logout } = useAuth();
   const { activeTool, goHome, goBack, goForward, canGoBack, canGoForward } = useNavigation();
   const { t, lang, setLang } = useLanguage();
+  const { plan, planId, isManaged } = usePlan();
 
   return (
     <div className="topbar">
@@ -50,6 +53,8 @@ export default function TopBar() {
         </div>
       </div>
       <div className="topbar-right">
+        <span className="plan-chip" title="Current plan">{plan.name}</span>
+        {!isManaged && planId !== 'fleet_pro' && <Link to="/plans" className="topbar-upgrade">Upgrade</Link>}
         <label className="language-control app-language" title="Language">
           <span>文</span>
           <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">

@@ -16,3 +16,6 @@ dist/
 api/uploads/ai/
 demo/
 IMPORTANT LINKS.docx 
+backups/
+osm_imports/*.pbf
+osm_imports/neon_test.txt

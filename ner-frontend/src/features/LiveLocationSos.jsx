@@ -4,6 +4,8 @@ import { api } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useChat } from '../context/ChatContext.jsx';
+import { usePlan } from '../context/PlanContext.jsx';
+import { Link } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useLocationTracking } from '../context/LocationTrackingContext.jsx';
 import OfflineSosCard from './OfflineSosCard.jsx';
@@ -31,6 +33,7 @@ export default function LiveLocationSos() {
   const { name, setName, phone, setPhone, sessionId, apiRole } = useAuth();
   const { map } = useMap();
   const { openChat } = useChat();
+  const { sosLimit } = usePlan();
   const { t } = useLanguage();
   const { isTracking: sharing, permission, lastPosition, startTracking, stopTracking, setStatus: setTrackingStatus } = useLocationTracking();
   const [shareStatus, setShareStatus] = useState(t('not_sharing'));
@@ -96,7 +99,10 @@ export default function LiveLocationSos() {
       return;
     }
     try {
-      const nearby = await api.nearbyPeople(lat, lon, sessionId, 25);
+      const allNearby = await api.nearbyPeople(lat, lon, sessionId, 25);
+      // Free plan: SOS reaches the nearest few people only (nearest first).
+      const nearby = Number.isFinite(sosLimit) ? allNearby.slice(0, sosLimit) : allNearby;
+      const hiddenCount = allNearby.length - nearby.length;
       markersRef.current.forEach((m) => map && map.removeLayer(m));
       if (map) {
         markersRef.current = nearby.map((d) => {
@@ -109,7 +115,7 @@ export default function LiveLocationSos() {
           return marker;
         });
       }
-      setStuckResults({ people: nearby });
+      setStuckResults({ people: nearby, hiddenCount });
     } catch (err) {
       setStuckResults({ error: err.message });
     }
@@ -243,6 +249,11 @@ export default function LiveLocationSos() {
       {stuckResults?.error && <div className="status-line">{stuckResults.error}</div>}
       {stuckResults?.people && stuckResults.people.length === 0 && (
         <div className="status-line">{t('no_one_nearby')}</div>
+      )}
+      {stuckResults?.hiddenCount > 0 && (
+        <div className="status-line">
+          Showing the {sosLimit} nearest people on the Free plan. {stuckResults.hiddenCount} more nearby. <Link to="/plans" style={{ color: 'inherit', fontWeight: 700 }}>Upgrade</Link> to reach everyone.
+        </div>
       )}
       {stuckResults?.people?.map((d, idx) => (
         <div className="card" key={idx} style={{ cursor: 'pointer' }} onClick={() => focusPersonOnMap(d)}>

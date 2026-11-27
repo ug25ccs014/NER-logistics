@@ -8,6 +8,8 @@ import OfflineRoutePanel from './OfflineRoutePanel.jsx';
 import { useMap } from '../context/MapContext.jsx';
 import { useSegments } from '../context/SegmentsContext.jsx';
 import { useActiveRoute } from '../context/ActiveRouteContext.jsx';
+import { usePlan } from '../context/PlanContext.jsx';
+import { Link } from 'react-router-dom';
 import { riskLevelIcon } from '../utils/mapIcons.js';
 import {
   findNearbyMonitoredSegments,
@@ -37,6 +39,8 @@ export default function RouteSearch({ onRouteFound }) {
   const { segments, refresh: refreshSegments, savedAt: segmentsSavedAt } = useSegments();
   const scoresUpdated = segments?.scores_updated_at;
   const { setRouteCoords } = useActiveRoute();
+  const { canSearchRoute, recordRoute, routeLimit } = usePlan();
+  const [limitHit, setLimitHit] = useState(false);
 
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
@@ -200,6 +204,13 @@ export default function RouteSearch({ onRouteFound }) {
   };
 
   const search = async () => {
+    // Free plan: stop before any network work once the monthly allowance is used.
+    if (!canSearchRoute()) {
+      setLimitHit(true);
+      setStatus(`You have used all ${routeLimit} free routes this month.`);
+      return;
+    }
+    setLimitHit(false);
     setStatus('Finding route...');
     setForecastStatus(null);
     // Refresh identity/risk data before each planned trip so a road name
@@ -232,6 +243,7 @@ export default function RouteSearch({ onRouteFound }) {
       setSelectedIndex(0);
       renderRoute(forecastedOptions, 0);
       setStatus(null);
+      recordRoute(); // counts toward the Free plan's monthly routes
       onRouteFound?.({ origin, dest });
     } catch (err) {
       setStatus(navigator.onLine === false ? t('off_route_needs_net') : err.message);
@@ -372,6 +384,7 @@ export default function RouteSearch({ onRouteFound }) {
       )}
       <OfflineRoutePanel onRoutes={showOfflineRoutes} />
       {status && <div className="status-line">{status}</div>}
+      {limitHit && <Link to="/plans" className="btn btn-primary" style={{ display: 'inline-block', textDecoration: 'none', marginTop: 6 }}>Upgrade for unlimited routes</Link>}
       {routeOptions.length === 0 && savedRoute?.data?.routeOptions?.length > 0 && (
         <button type="button" className="btn" style={{ marginTop: 8, display: 'block' }} onClick={() => restoreSavedRoute()}>
           💾 {t('off_saved_route_btn').replace('{time}', new Date(savedRoute.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}
